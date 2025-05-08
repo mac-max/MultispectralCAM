@@ -1,30 +1,46 @@
+import subprocess
 import cv2
+import numpy as np
 
-def main():
-    # Kamera initialisieren (ID 0 sollte bei der Pi-Kamera funktionieren)
-    cap = cv2.VideoCapture(0)
+def run_camera_preview():
+    # Starte libcamera-vid mit MJPEG-Ausgabe an stdout
+    cmd = [
+        "libcamera-vid",
+        "-t", "0",                    # Unbegrenzt laufen
+        "--width", "640",
+        "--height", "480",
+        "--framerate", "15",
+        "--codec", "mjpeg",          # JPEG-Frames
+        "--inline",                  # JPEG-Marker erforderlich
+        "-o", "-"                    # Ausgabe auf stdout
+    ]
 
-    if not cap.isOpened():
-        print("Fehler: Kamera konnte nicht geöffnet werden.")
-        return
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, bufsize=10**8)
 
-    print("Kamerastream gestartet. Drücke 'q' zum Beenden.")
-
+    buffer = b""
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("Fehler beim Lesen des Kamerabildes.")
+        # Lese Daten vom MJPEG-Stream
+        data = proc.stdout.read(4096)
+        if not data:
             break
+        buffer += data
 
-        # Bild anzeigen
-        cv2.imshow("Live-Vorschau", frame)
+        # Suche JPEG-Start- und End-Marker
+        start = buffer.find(b'\xff\xd8')
+        end = buffer.find(b'\xff\xd9')
+        if start != -1 and end != -1 and end > start:
+            jpg = buffer[start:end+2]
+            buffer = buffer[end+2:]
 
-        # Mit 'q' beenden
-        if cv2.waitKey(1) & 0xFF == ord('q'):
-            break
+            # JPEG dekodieren und anzeigen
+            img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if img is not None:
+                cv2.imshow("Live-Vorschau (libcamera-vid)", img)
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                    break
 
-    cap.release()
+    proc.terminate()
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    main()
+    run_camera_preview()
