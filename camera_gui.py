@@ -72,7 +72,7 @@ ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window).pack(pad
 
 def open_led_window():
     LEDController(root)
-    
+
 def update_gui():
     frame = stream.get_frame()
     if frame:
