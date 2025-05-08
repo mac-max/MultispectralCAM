@@ -57,7 +57,9 @@ class CameraStream:
         self.running = False
         self.proc.terminate()
 
-
+def open_led_window():
+    LEDController(root)
+    
 # GUI-Setup
 root = tk.Tk()
 root.title("Multispektralkamera Vorschau")
@@ -70,8 +72,6 @@ stream = CameraStream()
 
 ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window).pack(pady=10)
 
-def open_led_window():
-    LEDController(root)
 
 def update_gui():
     frame = stream.get_frame()
