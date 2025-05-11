@@ -8,15 +8,18 @@ class LEDController(tk.Toplevel):
     def __init__(self, master=None):
         super().__init__(master)
         self.title("LED PWM Steuerung – PCA9685 @ 0x41")
-        self.geometry("400x400")
-
-        # Hardware initialisieren
-        i2c = busio.I2C(board.SCL, board.SDA)
-        self.pca = PCA9685(i2c, address=0x41)
-        self.pca.frequency = 1000
+        self.geometry("420x420")
 
         self.channel_names = ["rot", "weiß", "blau", "grün", "orange", "gelb", "UV", "pink"]
         self.sliders = []
+
+        try:
+            i2c = busio.I2C(board.SCL, board.SDA)
+            self.pca = PCA9685(i2c, address=0x41)
+            self.pca.frequency = 1000
+        except Exception as e:
+            ttk.Label(self, text=f"[Fehler] I2C init: {e}").pack()
+            return
 
         self.create_widgets()
 
@@ -45,8 +48,7 @@ class LEDController(tk.Toplevel):
 
             self.sliders.append(var)
 
-        btn = ttk.Button(self, text="Alle Kanäle AUS", command=self.all_off)
-        btn.pack(pady=12)
+        ttk.Button(self, text="Alle Kanäle AUS", command=self.all_off).pack(pady=12)
 
     def all_off(self):
         for ch in range(len(self.channel_names)):
