@@ -129,9 +129,11 @@ class SensorMonitor(tk.Toplevel):
     def update_loop(self):
         while self.running:
             try:
-                # SLOT 0: F1-F4 + Clear 0 + NIR 0
+                # SLOT 0 lesen (F1–F4, Clear0, NIR0)
                 self.sensor.set_smux_low_channels()
+                time.sleep(0.02)
                 self.sensor.force_measurement()
+                time.sleep(0.1)  # <--- Wartezeit nach Messung
                 for label_text, slot, getter in self.channels:
                     if slot != "slot0":
                         continue
@@ -139,9 +141,11 @@ class SensorMonitor(tk.Toplevel):
                     self.bars[label_text][0]['value'] = val
                     self.bars[label_text][1]['text'] = str(val)
 
-                # SLOT 1: F5-F8 + Clear 1 + NIR 1
+                # SLOT 1 lesen (F5–F8, Clear1, NIR1)
                 self.sensor.set_smux_high_channels()
+                time.sleep(0.02)
                 self.sensor.force_measurement()
+                time.sleep(0.1)  # <--- Wartezeit nach Messung
                 for label_text, slot, getter in self.channels:
                     if slot != "slot1":
                         continue
@@ -149,14 +153,12 @@ class SensorMonitor(tk.Toplevel):
                     self.bars[label_text][0]['value'] = val
                     self.bars[label_text][1]['text'] = str(val)
 
-                # Flicker-Erkennung
+                # Flicker separat abfragen
                 f = self.sensor.flicker_detected
                 self.flicker_label['text'] = "Flicker: " + self.flicker_text(f)
 
             except Exception as e:
                 print("Fehler beim Sensorlesen:", e)
-
-            time.sleep(0.5)
 
     def destroy(self):
         self.running = False
