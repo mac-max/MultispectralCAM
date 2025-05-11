@@ -15,8 +15,8 @@ class LEDController(tk.Toplevel):
 
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
-            self.pca = PCA9685(i2c, address=0x41)
-            self.pca.frequency = 1000
+            self.pca = PCA9685(i2c, address=0x40)
+            self.pca.frequency = 1597
         except Exception as e:
             ttk.Label(self, text=f"[Fehler] I2C init: {e}").pack()
             return

@@ -10,24 +10,23 @@ class SensorMonitor(tk.Toplevel):
     def __init__(self, master=None):
         super().__init__(master)
         self.title("AS7341 Spektralsensor")
-        self.geometry("400x550")
+        self.geometry("420x600")
 
-        # Sensor initialisieren
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
             self.sensor = AS7341(i2c)
+            self.device = self.sensor._device  # Zugriff auf internes i2c_device
         except Exception as e:
             ttk.Label(self, text=f"[Fehler beim Sensorinit: {e}]").pack()
             return
 
         self.light_on = False
+        self.ir_filter_on = False
         self.running = True
-
         self.bars = {}
-        self.build_ui()
 
-        self.thread = threading.Thread(target=self.update_loop, daemon=True)
-        self.thread.start()
+        self.build_ui()
+        threading.Thread(target=self.update_loop, daemon=True).start()
 
     def build_ui(self):
         frame = ttk.Frame(self)
@@ -49,17 +48,12 @@ class SensorMonitor(tk.Toplevel):
         for label_text, _ in self.channels:
             row = ttk.Frame(frame)
             row.pack(fill='x', pady=2)
-
-            label = ttk.Label(row, text=label_text, width=8)
-            label.pack(side='left')
-
-            progress = ttk.Progressbar(row, orient='horizontal', length=250, mode='determinate', maximum=60000)
-            progress.pack(side='left', padx=5)
-
-            value_label = ttk.Label(row, text="0")
-            value_label.pack(side='right')
-
-            self.bars[label_text] = (progress, value_label)
+            ttk.Label(row, text=label_text, width=8).pack(side='left')
+            bar = ttk.Progressbar(row, orient='horizontal', length=250, mode='determinate', maximum=60000)
+            bar.pack(side='left', padx=5)
+            label = ttk.Label(row, text="0")
+            label.pack(side='right')
+            self.bars[label_text] = (bar, label)
 
         # Clear-Kanal
         ttk.Label(self, text="Clear-Kanal").pack()
@@ -72,15 +66,31 @@ class SensorMonitor(tk.Toplevel):
         self.flicker_label = ttk.Label(self, text="Flicker: wird erkannt ...", font=("Arial", 10, "bold"))
         self.flicker_label.pack(pady=10)
 
-        # Licht-Button
+        # LED-Schalter
         self.led_btn = ttk.Button(self, text="Sensor-LED EIN", command=self.toggle_light)
         self.led_btn.pack(pady=5)
+
+        # IR-Filter-Schalter (GPIO am AS7341)
+        self.ir_btn = ttk.Button(self, text="IR-Filter AKTIVIEREN", command=self.toggle_ir_filter)
+        self.ir_btn.pack(pady=5)
 
     def toggle_light(self):
         self.light_on = not self.light_on
         self.sensor.led_current = 20
         self.sensor.led = self.light_on
         self.led_btn.config(text="Sensor-LED AUS" if self.light_on else "Sensor-LED EIN")
+
+    def toggle_ir_filter(self):
+        self.ir_filter_on = not self.ir_filter_on
+        self.set_gpio_as_output(self.ir_filter_on)
+        self.ir_btn.config(text="IR-Filter DEAKTIVIEREN" if self.ir_filter_on else "IR-Filter AKTIVIEREN")
+
+    def set_gpio_as_output(self, high=True):
+        try:
+            gpio_value = 0b10 | (1 if high else 0)  # Bit 1 = Output, Bit 0 = Level
+            self.device.write(bytes([0x70, gpio_value]))
+        except Exception as e:
+            print(f"[Fehler] IR-Filter GPIO nicht gesetzt: {e}")
 
     def flicker_text(self, code):
         return {
@@ -114,4 +124,5 @@ class SensorMonitor(tk.Toplevel):
 
     def destroy(self):
         self.running = False
+        self.set_gpio_as_output(False)  # IR-Filter beim Schließen deaktivieren
         super().destroy()
