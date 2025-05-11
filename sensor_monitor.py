@@ -63,23 +63,25 @@ class SensorMonitor(tk.Toplevel):
             label = ttk.Label(row, text="0")
             label.pack(side='right')
             self.bars[label_text] = (bar, label)
-            ttk.Label(self, text="Gain wählen:").pack(pady=(15, 0))
-            self.gain_options = {
-                "0.5x": Gain.GAIN_0_5X,
-                "1x": Gain.GAIN_1X,
-                "4x": Gain.GAIN_4X,
-                "16x": Gain.GAIN_16X,
-                "64x": Gain.GAIN_64X,
-                "128x": Gain.GAIN_128X,
-                "256x": Gain.GAIN_256X
-            }
-            self.selected_gain = tk.StringVar(value="256x")
-            gain_menu = ttk.OptionMenu(self, self.selected_gain, self.selected_gain.get(), *self.gain_options.keys(),
-                                       command=self.set_gain)
-            gain_menu.pack()
+
 
         self.flicker_label = ttk.Label(self, text="Flicker: wird erkannt ...", font=("Arial", 10, "bold"))
         self.flicker_label.pack(pady=10)
+
+        ttk.Label(self, text="Gain wählen:").pack(pady=(15, 0))
+        self.gain_options = {
+            "0.5x": Gain.GAIN_0_5X,
+            "1x": Gain.GAIN_1X,
+            "4x": Gain.GAIN_4X,
+            "16x": Gain.GAIN_16X,
+            "64x": Gain.GAIN_64X,
+            "128x": Gain.GAIN_128X,
+            "256x": Gain.GAIN_256X
+        }
+        self.selected_gain = tk.StringVar(value="256x")
+        gain_menu = ttk.OptionMenu(self, self.selected_gain, self.selected_gain.get(), *self.gain_options.keys(),
+                                   command=self.set_gain)
+        gain_menu.pack()
 
         self.led_btn = ttk.Button(self, text="Sensor-LED EIN", command=self.toggle_light)
         self.led_btn.pack(pady=5)
