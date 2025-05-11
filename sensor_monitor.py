@@ -3,20 +3,21 @@ from tkinter import ttk
 import board
 import busio
 from adafruit_as7341 import AS7341
-from adafruit_bus_device.i2c_device import I2CDevice  # <--- direkter I2C-Zugriff
+from adafruit_bus_device.i2c_device import I2CDevice
 import threading
 import time
 
 class SensorMonitor(tk.Toplevel):
     def __init__(self, master=None):
         super().__init__(master)
-        self.title("AS7341 Spektralsensor")
-        self.geometry("420x600")
+        self.title("AS7341 Spektralsensor (erweitert)")
+        self.geometry("440x750")
 
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
             self.sensor = AS7341(i2c)
-            self.device = I2CDevice(i2c, 0x39)  # <- direkter Zugriff auf das I2C-Gerät
+            self.device = I2CDevice(i2c, 0x39)
+            self.sensor.gain = 256  # optional: hohe Verstärkung
         except Exception as e:
             ttk.Label(self, text=f"[Fehler beim Sensorinit: {e}]").pack()
             return
@@ -33,33 +34,32 @@ class SensorMonitor(tk.Toplevel):
         frame = ttk.Frame(self)
         frame.pack(padx=20, pady=10, fill="x")
 
+        # 10 spektrale Kanäle + Clear/NIR (Slot 0 + Slot 1)
         self.channels = [
-            ("415 nm", lambda: self.sensor.channel_415nm),
-            ("445 nm", lambda: self.sensor.channel_445nm),
-            ("480 nm", lambda: self.sensor.channel_480nm),
-            ("515 nm", lambda: self.sensor.channel_515nm),
-            ("555 nm", lambda: self.sensor.channel_555nm),
-            ("590 nm", lambda: self.sensor.channel_590nm),
-            ("630 nm", lambda: self.sensor.channel_630nm),
-            ("680 nm", lambda: self.sensor.channel_680nm),
-            ("NIR",    lambda: self.sensor.nir_channel),
+            ("F1 415 nm", "slot0", lambda: self.sensor.channel_415nm),
+            ("F2 445 nm", "slot0", lambda: self.sensor.channel_445nm),
+            ("F3 480 nm", "slot0", lambda: self.sensor.channel_480nm),
+            ("F4 515 nm", "slot0", lambda: self.sensor.channel_515nm),
+            ("Clear 0",   "slot0", lambda: self.sensor.clear_channel),
+            ("NIR 0",     "slot0", lambda: self.sensor.nir_channel),
+
+            ("F5 555 nm", "slot1", lambda: self.sensor.channel_555nm),
+            ("F6 590 nm", "slot1", lambda: self.sensor.channel_590nm),
+            ("F7 630 nm", "slot1", lambda: self.sensor.channel_630nm),
+            ("F8 680 nm", "slot1", lambda: self.sensor.channel_680nm),
+            ("Clear 1",   "slot1", lambda: self.sensor.clear_channel),
+            ("NIR 1",     "slot1", lambda: self.sensor.nir_channel),
         ]
 
-        for label_text, _ in self.channels:
+        for label_text, slot, _ in self.channels:
             row = ttk.Frame(frame)
             row.pack(fill='x', pady=2)
-            ttk.Label(row, text=label_text, width=8).pack(side='left')
+            ttk.Label(row, text=label_text, width=10).pack(side='left')
             bar = ttk.Progressbar(row, orient='horizontal', length=250, mode='determinate', maximum=60000)
             bar.pack(side='left', padx=5)
             label = ttk.Label(row, text="0")
             label.pack(side='right')
             self.bars[label_text] = (bar, label)
-
-        ttk.Label(self, text="Clear-Kanal").pack()
-        self.clear_bar = ttk.Progressbar(self, orient='horizontal', length=250, mode='determinate', maximum=60000)
-        self.clear_bar.pack(padx=10)
-        self.clear_label = ttk.Label(self, text="0")
-        self.clear_label.pack()
 
         self.flicker_label = ttk.Label(self, text="Flicker: wird erkannt ...", font=("Arial", 10, "bold"))
         self.flicker_label.pack(pady=10)
@@ -83,7 +83,7 @@ class SensorMonitor(tk.Toplevel):
 
     def set_gpio_as_output(self, high=True):
         try:
-            value = 0b10 | (1 if high else 0)  # Bit 1 = Output, Bit 0 = Level
+            value = 0b10 | (1 if high else 0)
             with self.device as i2c:
                 i2c.write(bytes([0x70, value]))
         except Exception as e:
@@ -102,15 +102,27 @@ class SensorMonitor(tk.Toplevel):
     def update_loop(self):
         while self.running:
             try:
-                for label_text, getter in self.channels:
-                    value = getter()
-                    self.bars[label_text][0]['value'] = value
-                    self.bars[label_text][1]['text'] = str(value)
+                # SLOT 0: F1-F4 + Clear 0 + NIR 0
+                self.sensor.set_smux_low_channels()
+                self.sensor.force_measurement()
+                for label_text, slot, getter in self.channels:
+                    if slot != "slot0":
+                        continue
+                    val = getter()
+                    self.bars[label_text][0]['value'] = val
+                    self.bars[label_text][1]['text'] = str(val)
 
-                c = self.sensor.clear_channel
-                self.clear_bar['value'] = c
-                self.clear_label['text'] = str(c)
+                # SLOT 1: F5-F8 + Clear 1 + NIR 1
+                self.sensor.set_smux_high_channels()
+                self.sensor.force_measurement()
+                for label_text, slot, getter in self.channels:
+                    if slot != "slot1":
+                        continue
+                    val = getter()
+                    self.bars[label_text][0]['value'] = val
+                    self.bars[label_text][1]['text'] = str(val)
 
+                # Flicker-Erkennung
                 f = self.sensor.flicker_detected
                 self.flicker_label['text'] = "Flicker: " + self.flicker_text(f)
 
@@ -121,5 +133,5 @@ class SensorMonitor(tk.Toplevel):
 
     def destroy(self):
         self.running = False
-        self.set_gpio_as_output(False)  # IR-Filter beim Schließen deaktivieren
+        self.set_gpio_as_output(False)
         super().destroy()
