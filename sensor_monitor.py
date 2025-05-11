@@ -3,6 +3,7 @@ from tkinter import ttk
 import board
 import busio
 from adafruit_as7341 import AS7341
+from adafruit_as7341 import Gain
 from adafruit_bus_device.i2c_device import I2CDevice
 import threading
 import time
@@ -17,7 +18,9 @@ class SensorMonitor(tk.Toplevel):
             i2c = busio.I2C(board.SCL, board.SDA)
             self.sensor = AS7341(i2c)
             self.device = I2CDevice(i2c, 0x39)
-            self.sensor.gain = 256  # optional: hohe Verstärkung
+            from adafruit_as7341 import Gain
+            self.sensor.gain = Gain.GAIN_256X
+
         except Exception as e:
             ttk.Label(self, text=f"[Fehler beim Sensorinit: {e}]").pack()
             return
@@ -60,6 +63,20 @@ class SensorMonitor(tk.Toplevel):
             label = ttk.Label(row, text="0")
             label.pack(side='right')
             self.bars[label_text] = (bar, label)
+            ttk.Label(self, text="Gain wählen:").pack(pady=(15, 0))
+            self.gain_options = {
+                "0.5x": Gain.GAIN_0_5X,
+                "1x": Gain.GAIN_1X,
+                "4x": Gain.GAIN_4X,
+                "16x": Gain.GAIN_16X,
+                "64x": Gain.GAIN_64X,
+                "128x": Gain.GAIN_128X,
+                "256x": Gain.GAIN_256X
+            }
+            self.selected_gain = tk.StringVar(value="256x")
+            gain_menu = ttk.OptionMenu(self, self.selected_gain, self.selected_gain.get(), *self.gain_options.keys(),
+                                       command=self.set_gain)
+            gain_menu.pack()
 
         self.flicker_label = ttk.Label(self, text="Flicker: wird erkannt ...", font=("Arial", 10, "bold"))
         self.flicker_label.pack(pady=10)
@@ -69,6 +86,14 @@ class SensorMonitor(tk.Toplevel):
 
         self.ir_btn = ttk.Button(self, text="IR-Filter AKTIVIEREN", command=self.toggle_ir_filter)
         self.ir_btn.pack(pady=5)
+
+    def set_gain(self, label):
+        try:
+            gain_value = self.gain_options[label]
+            self.sensor.gain = gain_value
+            print(f"[INFO] Gain gesetzt auf {label}")
+        except Exception as e:
+            print(f"[Fehler] Gain konnte nicht gesetzt werden: {e}")
 
     def toggle_light(self):
         self.light_on = not self.light_on
