@@ -126,39 +126,75 @@ class SensorMonitor(tk.Toplevel):
             255: "Fehler / keine Messung"
         }.get(code, f"Unbekannt ({code})")
 
+    def set_smux_slot0(self):
+        try:
+            # F1–F4 + Clear + NIR
+            smux = [
+                0x00, 0x00, 0b00101100,  # F1-F4
+                0b00000011, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00
+            ]
+            self.sensor._i2c_device.write(bytes([0x00, 0x30]))  # Enable SMUX config
+            for i in range(12):
+                self.sensor._i2c_device.write(bytes([0x31 + i, smux[i]]))
+            self.sensor._i2c_device.write(bytes([0x00, 0x00]))  # Disable config
+        except Exception as e:
+            print("[Fehler] Slot 0 config:", e)
+
+    def set_smux_slot1(self):
+        try:
+            # F5–F8 + Clear + NIR
+            smux = [
+                0x00, 0x00, 0x00,
+                0b00000011, 0x00, 0b00101100,  # F5–F8
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00
+            ]
+            self.sensor._i2c_device.write(bytes([0x00, 0x30]))  # Enable SMUX config
+            for i in range(12):
+                self.sensor._i2c_device.write(bytes([0x31 + i, smux[i]]))
+            self.sensor._i2c_device.write(bytes([0x00, 0x00]))  # Disable config
+        except Exception as e:
+            print("[Fehler] Slot 1 config:", e)
+
+    def start_measurement(self):
+        self.sensor._i2c_device.write(bytes([0x80, 0x10]))  # Enable + FDC
+        while True:
+            result = bytearray(1)
+            self.sensor._i2c_device.write_then_readinto(bytes([0x91]), result)
+            if result[0] & 0x40:  # FVALID == 1
+                break
+
     def update_loop(self):
         while self.running:
             try:
-                # SLOT 0 lesen (F1–F4, Clear0, NIR0)
-                self.sensor.set_smux_low_channels()
-                time.sleep(0.02)
-                self.sensor.force_measurement()
-                time.sleep(0.1)  # <--- Wartezeit nach Messung
+                # SLOT 0: F1–F4
+                self.set_smux_slot0()
+                self.start_measurement()
                 for label_text, slot, getter in self.channels:
-                    if slot != "slot0":
-                        continue
-                    val = getter()
-                    self.bars[label_text][0]['value'] = val
-                    self.bars[label_text][1]['text'] = str(val)
+                    if slot == "slot0":
+                        val = getter()
+                        self.bars[label_text][0]['value'] = val
+                        self.bars[label_text][1]['text'] = str(val)
 
-                # SLOT 1 lesen (F5–F8, Clear1, NIR1)
-                self.sensor.set_smux_high_channels()
-                time.sleep(0.02)
-                self.sensor.force_measurement()
-                time.sleep(0.1)  # <--- Wartezeit nach Messung
+                # SLOT 1: F5–F8
+                self.set_smux_slot1()
+                self.start_measurement()
                 for label_text, slot, getter in self.channels:
-                    if slot != "slot1":
-                        continue
-                    val = getter()
-                    self.bars[label_text][0]['value'] = val
-                    self.bars[label_text][1]['text'] = str(val)
+                    if slot == "slot1":
+                        val = getter()
+                        self.bars[label_text][0]['value'] = val
+                        self.bars[label_text][1]['text'] = str(val)
 
-                # Flicker separat abfragen
+                # Flicker
                 f = self.sensor.flicker_detected
                 self.flicker_label['text'] = "Flicker: " + self.flicker_text(f)
 
             except Exception as e:
                 print("Fehler beim Sensorlesen:", e)
+
+            time.sleep(0.5)
 
     def destroy(self):
         self.running = False
