@@ -3,6 +3,7 @@ from tkinter import ttk
 import board
 import busio
 from adafruit_as7341 import AS7341
+from adafruit_bus_device.i2c_device import I2CDevice  # <--- direkter I2C-Zugriff
 import threading
 import time
 
@@ -15,7 +16,7 @@ class SensorMonitor(tk.Toplevel):
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
             self.sensor = AS7341(i2c)
-            self.device = self.sensor._device  # Zugriff auf internes i2c_device
+            self.device = I2CDevice(i2c, 0x39)  # <- direkter Zugriff auf das I2C-Gerät
         except Exception as e:
             ttk.Label(self, text=f"[Fehler beim Sensorinit: {e}]").pack()
             return
@@ -32,7 +33,6 @@ class SensorMonitor(tk.Toplevel):
         frame = ttk.Frame(self)
         frame.pack(padx=20, pady=10, fill="x")
 
-        # Spektralkanäle
         self.channels = [
             ("415 nm", lambda: self.sensor.channel_415nm),
             ("445 nm", lambda: self.sensor.channel_445nm),
@@ -55,22 +55,18 @@ class SensorMonitor(tk.Toplevel):
             label.pack(side='right')
             self.bars[label_text] = (bar, label)
 
-        # Clear-Kanal
         ttk.Label(self, text="Clear-Kanal").pack()
         self.clear_bar = ttk.Progressbar(self, orient='horizontal', length=250, mode='determinate', maximum=60000)
         self.clear_bar.pack(padx=10)
         self.clear_label = ttk.Label(self, text="0")
         self.clear_label.pack()
 
-        # Flicker
         self.flicker_label = ttk.Label(self, text="Flicker: wird erkannt ...", font=("Arial", 10, "bold"))
         self.flicker_label.pack(pady=10)
 
-        # LED-Schalter
         self.led_btn = ttk.Button(self, text="Sensor-LED EIN", command=self.toggle_light)
         self.led_btn.pack(pady=5)
 
-        # IR-Filter-Schalter (GPIO am AS7341)
         self.ir_btn = ttk.Button(self, text="IR-Filter AKTIVIEREN", command=self.toggle_ir_filter)
         self.ir_btn.pack(pady=5)
 
@@ -87,8 +83,9 @@ class SensorMonitor(tk.Toplevel):
 
     def set_gpio_as_output(self, high=True):
         try:
-            gpio_value = 0b10 | (1 if high else 0)  # Bit 1 = Output, Bit 0 = Level
-            self.device.write(bytes([0x70, gpio_value]))
+            value = 0b10 | (1 if high else 0)  # Bit 1 = Output, Bit 0 = Level
+            with self.device as i2c:
+                i2c.write(bytes([0x70, value]))
         except Exception as e:
             print(f"[Fehler] IR-Filter GPIO nicht gesetzt: {e}")
 
