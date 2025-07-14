@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import ttk
+from filter_controller import IRFilterController
 
 class CameraSettings(tk.Toplevel):
     def __init__(self, master, camera_stream):
@@ -41,8 +42,26 @@ class CameraSettings(tk.Toplevel):
         gain_slider.pack(fill="x", pady=(0, 10))
         ttk.Label(frame, textvariable=self.gain_var).pack(anchor="e")
 
+        # IR-Filtersteuerung
+        ttk.Label(frame, text="IR-Filter:").pack(anchor="w", pady=(10, 0))
+        btn_frame = ttk.Frame(frame)
+        btn_frame.pack(fill="x", pady=(0, 10))
+
+        ttk.Button(btn_frame, text="Einschwenken", command=self.switch_filter_in).pack(side="left", expand=True,
+                                                                                       fill="x", padx=(0, 5))
+        ttk.Button(btn_frame, text="Ausschwenken", command=self.switch_filter_out).pack(side="left", expand=True,
+                                                                                        fill="x", padx=(5, 0))
+
         # Anwenden-Button
         ttk.Button(frame, text="Anwenden", command=self.apply_settings).pack(pady=(10, 0))
+
+    def switch_filter_in(self):
+        print("[INFO] IR-Filter wird eingeschwenkt.")
+        self.ir_filter.switch_in()
+
+    def switch_filter_out(self):
+        print("[INFO] IR-Filter wird ausgeschwenkt.")
+        self.ir_filter.switch_out()
 
     def apply_settings(self):
         res_label = self.selected_res.get()
