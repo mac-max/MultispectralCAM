@@ -3,10 +3,14 @@ import time
 
 class IRFilterController:
     def __init__(self, pin_pulse=2, pin_dir=3, pulse_duration=0.05):
-        self.pi = pigpio.pi()
+        self.pi = pigpio.pi()  # Verbindung zum Daemon
+        if not self.pi.connected:
+            raise RuntimeError("pigpio daemon is not running")
+
         self.pin_pulse = pin_pulse
         self.pin_dir = pin_dir
         self.pulse_duration = pulse_duration
+
         self.pi.set_mode(self.pin_pulse, pigpio.OUTPUT)
         self.pi.set_mode(self.pin_dir, pigpio.OUTPUT)
 
