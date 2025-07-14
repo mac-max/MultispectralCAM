@@ -8,6 +8,9 @@ class CameraSettings(tk.Toplevel):
         self.title("Kameraeinstellungen")
         self.camera_stream = camera_stream
 
+        # === IR-Filtersteuerung initialisieren ===
+        self.ir_filter = IRFilterController()
+
         self.res_options = {
             "640x480 @59fps": (640, 480, 59),
             "1296x972 @46fps": (1296, 972, 46),
