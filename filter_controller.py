@@ -2,7 +2,7 @@ import pigpio
 import time
 
 class IRFilterController:
-    def __init__(self, pin_in=22, pin_out=27, pin_pos=17, pin_neg=24, pulse_duration=0.5):
+    def __init__(self, pin_in=17, pin_out=27, pin_pos=22, pin_neg=24, pulse_duration=0.5):
         self.pi = pigpio.pi()
         if not self.pi.connected:
             raise RuntimeError("pigpio daemon is not running")
@@ -15,26 +15,26 @@ class IRFilterController:
 
         self.pi.set_mode(self.pin_in, pigpio.OUTPUT)
         self.pi.set_mode(self.pin_out, pigpio.OUTPUT)
-        self.pi.write(self.pin_in, 0)
-        self.pi.write(self.pin_out, 0)
+        self.pi.write(self.pin_in, 1)
+        self.pi.write(self.pin_out, 1)
 
         self.pi.set_mode(self.pin_pos, pigpio.OUTPUT)
         self.pi.set_mode(self.pin_neg, pigpio.OUTPUT)
-        self.pi.write(self.pin_pos, 0)
-        self.pi.write(self.pin_neg, 0)
+        self.pi.write(self.pin_pos, 1)
+        self.pi.write(self.pin_neg, 1)
 
 
     def switch_in(self):
         """IR-Filter einschwenken"""
-        self.pi.write(self.pin_out, 1)
-        self.pi.write(self.pin_in, 1)
-        self.pi.write(self.pin_pos, 1)
-        self.pi.write(self.pin_neg, 1)
-        time.sleep(self.pulse_duration)
         self.pi.write(self.pin_out, 0)
         self.pi.write(self.pin_in, 0)
         self.pi.write(self.pin_pos, 0)
         self.pi.write(self.pin_neg, 0)
+        time.sleep(self.pulse_duration)
+        self.pi.write(self.pin_out, 1)
+        self.pi.write(self.pin_in, 1)
+        self.pi.write(self.pin_pos, 1)
+        self.pi.write(self.pin_neg, 1)
 
 
     def switch_out(self):
@@ -44,10 +44,10 @@ class IRFilterController:
         self.pi.write(self.pin_pos, 1)
         self.pi.write(self.pin_neg, 1)
         time.sleep(self.pulse_duration)
-        self.pi.write(self.pin_out, 0)
-        self.pi.write(self.pin_in, 0)
-        self.pi.write(self.pin_pos, 0)
-        self.pi.write(self.pin_neg, 0)
+        self.pi.write(self.pin_out, 1)
+        self.pi.write(self.pin_in, 1)
+        self.pi.write(self.pin_pos, 1)
+        self.pi.write(self.pin_neg, 1)
 
 
     def cleanup(self):
