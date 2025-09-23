@@ -32,7 +32,7 @@ jpeg_capture = picam2.capture_array("main")
 # Oder direkt als Datei (RAW + JPEG gleichzeitig)
 
 picam2.capture_metadata()  # Metadaten mitnehmen
-picam2.capture_file("ftp://max@192.168.178.1/Frank/Images/image.dng", name="raw")   # speichert echtes RAW im DNG-Format
-picam2.capture_file("ftp://max@192.168.178.1/Frank/Images/image.jpg")
+picam2.capture_file("/run/user/1000/gvfs/ftp:host=192.168.178.1,user=max/Frank/Images/image.dng", name="raw")   # speichert echtes RAW im DNG-Format
+picam2.capture_file("/run/user/1000/gvfs/ftp:host=192.168.178.1,user=max/Frank/Images/image.jpg")
 
 picam2.stop()
