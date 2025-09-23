@@ -6,7 +6,7 @@ picam2 = Picamera2()
 # Kamera-Konfiguration für RAW + JPEG Ausgabe
 config = picam2.create_still_configuration(
     raw={"size": picam2.sensor_resolution},  # Bayer-Rohdaten
-    main={"size": (1920, 1080)},             # zusätzlich ein "normales" Bild
+    main={"size": (2592, 1944)},             # zusätzlich ein "normales" Bild
     buffer_count=2
 )
 
@@ -14,7 +14,7 @@ picam2.configure(config)
 
 # Automatik ausschalten (Belichtung, Gain, Weißabgleich)
 controls = {
-    "ExposureTime": 20000,   # in µs (z.B. 20000 µs = 20 ms)
+    "ExposureTime": 100000,   # in µs (100 ms)
     "AnalogueGain": 1.0,     # ~ ISO 100
     "AwbEnable": False,      # Auto White Balance aus
     "ColourGains": (1.0, 1.0)  # manuelles Weißabgleich-Gain für R/G/B
