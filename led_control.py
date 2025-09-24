@@ -2,7 +2,7 @@ import os, time, json
 import cv2
 import numpy as np
 from picamera2 import Picamera2
-from 4928d159-3e78-4a31-bcad-aa2d75829fb9 import LEDController  # deine Datei importieren
+from led_control import LEDController  # deine Datei importieren
 
 # --- LED Controller ---
 led = LEDController()
