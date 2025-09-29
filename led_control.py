@@ -12,12 +12,12 @@ class LEDController(tk.Toplevel):
 
         # Namen pro PCA, bereits sortiert (aufsteigend)
         self.channel_1_names = [
-            "434 nm", "455 nm", "510 nm", "597 nm", "610 nm", "630 nm", "644 nm", "Pink"
+            "644 nm", "3000 K", "455 nm", "510 nm", "610 nm", "597 nm", "434 nm", "pink"
         ]
 
         self.channel_2_names = [
-            "378 nm", "391 nm", "421 nm", "441 nm", "453 nm", "495 nm", "519 nm",
-            "591 nm", "655 nm", "863 nm", "968 nm", "NIR", "CLEAR"
+            "378 nm", "391 nm", "421 nm", "441 nm", "453 nm", "495 nm", "591 nm",
+            "630 nm", "655 nm", "863 nm", "968 nm", "pink", "520 nm", "5000 K"
         ]
 
         self.sliders_1 = []
@@ -26,7 +26,7 @@ class LEDController(tk.Toplevel):
         try:
             i2c = busio.I2C(board.SCL, board.SDA)
             self.pca_1 = PCA9685(i2c, address=0x40)
-            self.pca_2 = PCA9685(i2c, address=0x41)
+            self.pca_2 = PCA9685(i2c, address=0x58)
             self.pca_1.frequency = 1600
             self.pca_2.frequency = 1600
         except Exception as e:
