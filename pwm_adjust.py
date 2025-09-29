@@ -2,7 +2,7 @@ import os, time, json
 import cv2
 import numpy as np
 from picamera2 import Picamera2
-from 4928d159-3e78-4a31-bcad-aa2d75829fb9 import LEDController  # deine Datei importieren
+from led_control import LEDController  # deine Datei importieren
 
 # --- LED Controller ---
 led = LEDController()
@@ -16,7 +16,11 @@ def all_off():
 
 # --- Kamera Setup ---
 picam2 = Picamera2()
-config = picam2.create_still_configuration(main={"size": (640, 480)})
+config = picam2.create_still_configuration(
+    raw={"size": picam2.sensor_resolution},  # Bayer-Rohdaten
+    main={"size": (640,480)},             # zusätzlich ein "normales" Bild
+    buffer_count=2
+)
 picam2.configure(config)
 controls = {
     "ExposureTime": 20000,
@@ -42,7 +46,7 @@ def find_roi(frame):
         return (0, 0, frame.shape[1], frame.shape[0])
 
 # --- Iterative Kalibrierung ---
-def calibrate_channel(channel, target_mean=0.5, tolerance=0.05, max_trials=10):
+def calibrate_channel(channel, target_mean=0.5, tolerance=0.05, max_trials=10, save_raw=True):
     level = 30.0
     for trial in range(max_trials):
         set_pwm(channel, level)
@@ -62,15 +66,23 @@ def calibrate_channel(channel, target_mean=0.5, tolerance=0.05, max_trials=10):
         cv2.waitKey(1)
 
         if abs(mean_intensity - target_mean) <= tolerance:
-            print(f" {channel_names[channel]} kalibriert auf {level:.1f}% PWM")
+            print(f"✅ {channel_names[channel]} kalibriert auf {level:.1f}% PWM")
+
+            if save_raw:
+                # RAW-Bild speichern
+                raw_file = f"/home/pi/captures/{channel_names[channel].replace(' ', '_')}_raw.dng"
+                os.makedirs(os.path.dirname(raw_file), exist_ok=True)
+                picam2.capture_file(raw_file, name="raw")
+                print(f"📷 RAW-Bild gespeichert: {raw_file}")
+
             return level
 
+        # Proportionale Nachregelung
         level *= target_mean / (mean_intensity + 1e-6)
         level = min(max(level, 1.0), 100.0)
 
-    print(f" {channel_names[channel]} nicht perfekt kalibriert, Endwert={level:.1f}%")
+    print(f"⚠️ {channel_names[channel]} nicht perfekt kalibriert, Endwert={level:.1f}%")
     return level
-
 # --- Hauptschleife: Alle Kanäle ---
 results = {}
 for ch in range(len(channel_names)):
