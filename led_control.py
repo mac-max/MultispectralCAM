@@ -16,8 +16,8 @@ class LEDController(tk.Toplevel):
         ]
 
         self.channel_2_names = [
-            "378 nm", "391 nm", "421 nm", "441 nm", "453 nm", "495 nm", "591 nm",
-            "630 nm", "655 nm", "863 nm", "968 nm", "pink", "520 nm", "5000 K"
+            "453 nm", "441 nm", "421 nm", "391 nm", "378 nm", "495 nm", "591 nm",
+            "630 nm", "655 nm", "863 nm", "968 nm", "pink", "519 nm", "5000 K"
         ]
 
         self.sliders_1 = []
@@ -92,4 +92,4 @@ class LEDController(tk.Toplevel):
             self.set_pwm(self.pca_1, ch, 0)
         for ch, var in enumerate(self.sliders_2):
             var.set(0)
-            self.set_pwm(self.pca_2, ch, 0)
+            self.set_pwm(self.pca_2, ch + 2, 0)
