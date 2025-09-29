@@ -67,6 +67,7 @@ class LEDController(tk.Toplevel):
         # Überschrift für PCA 2
         ttk.Label(self, text="PCA9685 @ 0x41", font=('Arial', 12, 'bold')).pack(pady=(20, 0))
         for ch, name in enumerate(self.channel_2_names):
+            hw_channel = ch + 2  # Offset-Korrektur!
             frame = ttk.Frame(self)
             frame.pack(fill='x', padx=10, pady=2)
 
@@ -77,7 +78,7 @@ class LEDController(tk.Toplevel):
             slider = ttk.Scale(
                 frame, from_=0, to=100, orient='horizontal',
                 variable=var,
-                command=lambda val, ch=ch, var=var: self.on_slider_move(self.pca_2, ch, var)
+                command=lambda val, ch=hw_channel, var=var: self.on_slider_move(self.pca_2, ch, var)
             )
             slider.pack(side='left', expand=True, fill='x', padx=(5, 5))
 
