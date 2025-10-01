@@ -86,9 +86,6 @@ class SensorMonitor(tk.Toplevel):
         self.led_btn = ttk.Button(self, text="Sensor-LED EIN", command=self.toggle_light)
         self.led_btn.pack(pady=5)
 
-        self.ir_btn = ttk.Button(self, text="IR-Filter AKTIVIEREN", command=self.toggle_ir_filter)
-        self.ir_btn.pack(pady=5)
-
     def set_gain(self, label):
         try:
             gain_value = self.gain_options[label]
@@ -103,10 +100,6 @@ class SensorMonitor(tk.Toplevel):
         self.sensor.led = self.light_on
         self.led_btn.config(text="Sensor-LED AUS" if self.light_on else "Sensor-LED EIN")
 
-    def toggle_ir_filter(self):
-        self.ir_filter_on = not self.ir_filter_on
-        self.set_gpio_as_output(self.ir_filter_on)
-        self.ir_btn.config(text="IR-Filter DEAKTIVIEREN" if self.ir_filter_on else "IR-Filter AKTIVIEREN")
 
     def set_gpio_as_output(self, high=True):
         try:
