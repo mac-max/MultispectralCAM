@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 import board
 import busio
+import re
 from adafruit_pca9685 import PCA9685
 
 class LEDController(tk.Toplevel):
@@ -44,10 +45,19 @@ class LEDController(tk.Toplevel):
         val = var.get()
         self.set_pwm(pca, ch, val)
 
+    def extract_wavelength(self, label):
+        match = re.search(r"(\d+)", label)
+        return int(match.group(1)) if match else float('inf')
+
     def create_widgets(self):
-        # Überschrift für PCA 1
+        # PCA 1 – sortieren
+        sorted_channels_1 = sorted(
+            [(i, name) for i, name in enumerate(self.channel_1_names)],
+            key=lambda x: self.extract_wavelength(x[1])
+        )
+
         ttk.Label(self, text="PCA9685 @ 0x40", font=('Arial', 12, 'bold')).pack(pady=(10, 0))
-        for ch, name in enumerate(self.channel_1_names):
+        for ch, name in sorted_channels_1:
             frame = ttk.Frame(self)
             frame.pack(fill='x', padx=10, pady=2)
 
@@ -64,10 +74,14 @@ class LEDController(tk.Toplevel):
 
             self.sliders_1.append(var)
 
-        # Überschrift für PCA 2
-        ttk.Label(self, text="PCA9685 @ 0x41", font=('Arial', 12, 'bold')).pack(pady=(20, 0))
-        for ch, name in enumerate(self.channel_2_names):
-            hw_channel = ch + 2  # Offset-Korrektur!
+        # PCA 2 – sortieren (inkl. Offset!)
+        sorted_channels_2 = sorted(
+            [(i + 2, name) for i, name in enumerate(self.channel_2_names)],
+            key=lambda x: self.extract_wavelength(x[1])
+        )
+
+        ttk.Label(self, text="PCA9685 @ 0x58", font=('Arial', 12, 'bold')).pack(pady=(20, 0))
+        for ch, name in sorted_channels_2:
             frame = ttk.Frame(self)
             frame.pack(fill='x', padx=10, pady=2)
 
@@ -78,12 +92,13 @@ class LEDController(tk.Toplevel):
             slider = ttk.Scale(
                 frame, from_=0, to=100, orient='horizontal',
                 variable=var,
-                command=lambda val, ch=hw_channel, var=var: self.on_slider_move(self.pca_2, ch, var)
+                command=lambda val, ch=ch, var=var: self.on_slider_move(self.pca_2, ch, var)
             )
             slider.pack(side='left', expand=True, fill='x', padx=(5, 5))
 
             self.sliders_2.append(var)
 
+        # Alles-aus-Button
         ttk.Button(self, text="Alle Kanäle AUS", command=self.all_off).pack(pady=20)
 
     def all_off(self):
