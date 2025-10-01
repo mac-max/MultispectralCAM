@@ -90,7 +90,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, stretch=4)
 
     def open_led_control(self):
-        LEDController()  # Öffnet dein bestehendes Tkinter-Fenster
+        LEDController(root)  # Öffnet dein bestehendes Tkinter-Fenster
 
     def toggle_preview(self):
         if self.timer.isActive():
