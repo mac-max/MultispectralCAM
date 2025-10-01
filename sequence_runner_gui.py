@@ -1,5 +1,6 @@
 import sys
 import os
+os.environ.pop("QT_QPA_PLATFORM_PLUGIN_PATH", None)
 import json
 from PyQt5.QtWidgets import (
     QApplication, QMainWindow, QLabel, QPushButton, QWidget,
