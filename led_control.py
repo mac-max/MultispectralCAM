@@ -36,11 +36,6 @@ class LEDController(tk.Toplevel):
 
         self.create_widgets()
 
-        if __name__ == "__main__":
-            root = tk.Tk()
-            root.withdraw()  # Hauptfenster verstecken
-            LEDController(master=root)
-            root.mainloop()
 
     def set_pwm(self, pca, channel, percent):
         percent = max(0, min(100, percent))
@@ -115,3 +110,8 @@ class LEDController(tk.Toplevel):
             var.set(0)
             self.set_pwm(self.pca_2, ch + 2, 0)
 
+    if __name__ == "__main__":
+        root = tk.Tk()
+        root.withdraw()  # Hauptfenster verstecken
+        LEDController(master=root)
+        root.mainloop()
