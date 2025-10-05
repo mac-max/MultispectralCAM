@@ -5,7 +5,7 @@ import busio
 import re
 from adafruit_pca9685 import PCA9685
 
-class LEDControlWidget(QWidget):
+class LEDController(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
 
