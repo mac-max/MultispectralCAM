@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from filter_controller import IRFilterController  # <- dein Modul
-from led_controller import LEDController  # <-- Dein bestehendes LED GUI-Modul
+from led_control import LEDController  # <-- Dein bestehendes LED GUI-Modul
 
 
 # -------------------------
