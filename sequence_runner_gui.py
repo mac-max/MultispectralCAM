@@ -8,7 +8,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from led_control import LEDController
 from camera_settings import CameraSettings
 from sensor_monitor import SensorMonitor
-from camera_stream import CameraStream  # <- dein bestehender Streamcode
+from camera_gui import CameraStream  # <- dein bestehender Streamcode
 
 
 class SequenceRunnerGUI(tk.Tk):
