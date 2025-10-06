@@ -127,7 +127,7 @@ def update_gui():
 update_gui()
 
 # LED-Fenster öffnen
-def open_led_window():
+def open_led_window(root):
     try:
         LEDController(root)
     except Exception as e:
