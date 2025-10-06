@@ -120,10 +120,6 @@ def update_gui():
         camera_label.configure(image=imgtk)
     root.after(50, update_gui)
 
-def open_led_window():
-    #    self.led_window = LEDControlWidget()
-    #    self.led_window.show()
-    LEDController(root)
 
 update_gui()
 
@@ -136,7 +132,7 @@ def open_led_window(root):
         print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
 
 
-ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window).pack(pady=10)
+ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window(root)).pack(pady=10)
 ttk.Button(root, text="Kameraeinstellungen", command=lambda: CameraSettings(root, stream)).pack(pady=5)
 ttk.Button(root, text="Spektralsensor anzeigen", command=lambda: SensorMonitor(root)).pack(pady=5)
 
