@@ -74,6 +74,21 @@ def set_gain(self, label):
 btn = ttk.Button(root, text="Licht EIN", command=toggle_light)
 btn.pack(pady=10)
 
+ttk.Label(self, text="Gain wählen:").pack(pady=(15, 0))
+        self.gain_options = {
+            "0.5x": Gain.GAIN_0_5X,
+            "1x": Gain.GAIN_1X,
+            "4x": Gain.GAIN_4X,
+            "16x": Gain.GAIN_16X,
+            "64x": Gain.GAIN_64X,
+            "128x": Gain.GAIN_128X,
+            "256x": Gain.GAIN_256X
+        }
+        self.selected_gain = tk.StringVar(value="256x")
+        gain_menu = ttk.OptionMenu(self, self.selected_gain, self.selected_gain.get(), *self.gain_options.keys(), command=self.set_gain)
+        gain_menu.pack()
+
+
 # Live-Update in Hintergrundthread
 def update_loop():
     while True:
