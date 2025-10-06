@@ -1,8 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-# from led_control import LEDController
-from led_control_widget import LEDControlWidget
+from led_control import LEDController
+# from led_control_widget import LEDControlWidget
 from camera_settings import CameraSettings
 from sensor_monitor import SensorMonitor
 
@@ -99,10 +99,10 @@ class CameraStream:
         return self.frame
 
 
-    def open_led_window(self):
-        self.led_window = LEDControlWidget()
-        self.led_window.show()
-#       LEDController(root)
+def open_led_window(self):
+    self.led_window = LEDControlWidget()
+    self.led_window.show()
+#    LEDController(root)
 
 
 
@@ -127,14 +127,13 @@ def update_gui():
 update_gui()
 
 # LED-Fenster öffnen
-# def open_led_window(self):
-#     try:
-#         # LEDController(root)
-#         self.open_led_window(self)
-#     except Exception as e:
-#         print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
+def open_led_window():
+    try:
+        LEDController(root)
+    except Exception as e:
+        print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
 
-ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window).pack(pady=10)
+ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window(root)).pack(pady=10)
 ttk.Button(root, text="Kameraeinstellungen", command=lambda: CameraSettings(root, stream)).pack(pady=5)
 ttk.Button(root, text="Spektralsensor anzeigen", command=lambda: SensorMonitor(root)).pack(pady=5)
 
