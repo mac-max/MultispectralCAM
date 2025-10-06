@@ -124,15 +124,15 @@ def update_gui():
 update_gui()
 
 
-# LED-Fenster öffnen
-def open_led_window(root):
-    try:
-        LEDController(root)
-    except Exception as e:
-        print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
+# # LED-Fenster öffnen
+# def open_led_window(root):
+#     try:
+#         LEDController(root)
+#     except Exception as e:
+#         print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
 
 
-ttk.Button(root, text="LED Steuerung öffnen", command=open_led_window(root)).pack(pady=10)
+ttk.Button(root, text="LED Steuerung öffnen", command=LEDController(root)).pack(pady=10)
 ttk.Button(root, text="Kameraeinstellungen", command=lambda: CameraSettings(root, stream)).pack(pady=5)
 ttk.Button(root, text="Spektralsensor anzeigen", command=lambda: SensorMonitor(root)).pack(pady=5)
 
