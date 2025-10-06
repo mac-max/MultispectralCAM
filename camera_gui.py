@@ -127,9 +127,10 @@ def update_gui():
 update_gui()
 
 # LED-Fenster öffnen
-def open_led_window():
+def open_led_window(self):
     try:
-        LEDController(root)
+        # LEDController(root)
+        self.open_led_window()
     except Exception as e:
         print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
 
