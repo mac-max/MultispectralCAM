@@ -29,8 +29,8 @@ channels = [
     ("590 nm", lambda: sensor.channel_590nm),
     ("630 nm", lambda: sensor.channel_630nm),
     ("680 nm", lambda: sensor.channel_680nm),
-    ("NIR",    lambda: sensor.nir_channel),
-    ("CLEAR",  lambda: sensor.clear_channel),
+    ("NIR",    lambda: sensor.channel_nir),
+    ("CLEAR",  lambda: sensor.channel_clear),
 ]
 
 bars = {}
