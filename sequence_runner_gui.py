@@ -13,7 +13,8 @@ import cv2
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
-from led_control import LEDController  # dein vorhandenes Tkinter-LED-Fenster
+# from led_control import LEDController  # dein vorhandenes Tkinter-LED-Fenster
+from led_control_widget import LEDControlWidget
 
 # Optional später nutzbar:
 # from sequence_runner import calibrate_channel
@@ -90,7 +91,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(right_layout, stretch=4)
 
     def open_led_control(self):
-        LEDController(root)  # Öffnet dein bestehendes Tkinter-Fenster
+        LEDControlWidget()  # Öffnet dein bestehendes Tkinter-Fenster
 
     def toggle_preview(self):
         if self.timer.isActive():
