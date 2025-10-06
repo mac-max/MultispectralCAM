@@ -1,7 +1,8 @@
 import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
-from led_control import LEDController
+# from led_control import LEDController
+from led_control_widget import LEDControlWidget
 from camera_settings import CameraSettings
 from sensor_monitor import SensorMonitor
 
@@ -99,7 +100,11 @@ class CameraStream:
 
 
 def open_led_window():
-    LEDController(root)
+    self.led_window = LEDControlWidget()
+    self.led_window.show()
+#    LEDController(root)
+
+
 
 # GUI-Setup
 root = tk.Tk()
