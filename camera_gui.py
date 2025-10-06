@@ -99,7 +99,7 @@ class CameraStream:
         return self.frame
 
 
-def open_led_window():
+def open_led_window(self):
     self.led_window = LEDControlWidget()
     self.led_window.show()
 #    LEDController(root)
