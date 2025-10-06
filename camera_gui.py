@@ -13,12 +13,13 @@ import numpy as np
 
 
 class CameraStream:
-    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None):
+    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, standalone=True:
         self.width = width
         self.height = height
         self.framerate = framerate
         self.shutter = shutter
         self.gain = gain
+        self.standalone = standalone
 
         self.buffer = b""
         self.frame = None
@@ -27,6 +28,9 @@ class CameraStream:
         self.thread = None
 
         self.start()
+
+        if self.standalone:
+            self._create_preview_window()
 
     def build_command(self):
         cmd = [
@@ -81,7 +85,6 @@ class CameraStream:
                 if not data:
                     break
                 self.buffer += data
-
                 start = self.buffer.find(b'\xff\xd8')
                 end = self.buffer.find(b'\xff\xd9')
                 if start != -1 and end != -1 and end > start:
@@ -97,51 +100,26 @@ class CameraStream:
     def get_frame(self):
         return self.frame
 
+    def _create_preview_window(self):
+        root = tk.Tk()
+        root.title("Kamera-Vorschau")
+        label = ttk.Label(root)
+        label.pack(padx=10, pady=10)
 
+        def update():
+            frame = self.get_frame()
+            if frame:
+                imgtk = ImageTk.PhotoImage(image=frame)
+                label.imgtk = imgtk
+                label.configure(image=imgtk)
+            root.after(50, update)
 
+        ttk.Button(root, text="Beenden", command=lambda: (self.stop(), root.destroy())).pack(pady=10)
+        update()
+        root.mainloop()
 
-
-# GUI-Setup
-root = tk.Tk()
-root.title("Multispektralkamera Vorschau")
-
-# Kameraanzeige
-camera_label = ttk.Label(root)
-camera_label.pack(padx=10, pady=10)
-
-stream = CameraStream()
-
-
-def update_gui():
-    frame = stream.get_frame()
-    if frame:
-        imgtk = ImageTk.PhotoImage(image=frame)
-        camera_label.imgtk = imgtk
-        camera_label.configure(image=imgtk)
-    root.after(50, update_gui)
-
-
-update_gui()
-
-
-# # LED-Fenster öffnen
-# def open_led_window(root):
-#     try:
-#         LEDController(root)
-#     except Exception as e:
-#         print("[ERROR] LED-Controller konnte nicht geöffnet werden:", e)
-
-
-ttk.Button(root, text="LED Steuerung öffnen", command=lambda: LEDController(root)).pack(pady=10)
-ttk.Button(root, text="Kameraeinstellungen", command=lambda: CameraSettings(root, stream)).pack(pady=5)
-ttk.Button(root, text="Spektralsensor anzeigen", command=lambda: SensorMonitor(root)).pack(pady=5)
-
-
-# Sauberes Beenden
-def on_close():
-    stream.stop()
-    root.destroy()
-
-
-root.protocol("WM_DELETE_WINDOW", on_close)
-root.mainloop()
+    # -------------------------------------------------
+    # Standalone-Test
+    # -------------------------------------------------
+    if __name__ == "__main__":
+        stream = CameraStream(standalone=True)
