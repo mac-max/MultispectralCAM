@@ -43,8 +43,8 @@ class SensorMonitor(tk.Toplevel):
             ("590 nm", lambda: self.sensor.channel_590nm),
             ("630 nm", lambda: self.sensor.channel_630nm),
             ("680 nm", lambda: self.sensor.channel_680nm),
-            ("NIR",    lambda: self.sensor.nir_channel),
-            ("CLEAR",  lambda: self.sensor.clear_channel),
+            ("NIR",    lambda: self.sensor.channel_nir),
+            ("CLEAR",  lambda: self.sensor.channel_clear),
         ]
 
         for label_text, _ in self.channels:
