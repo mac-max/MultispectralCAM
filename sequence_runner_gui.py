@@ -61,12 +61,12 @@ class SequenceRunnerGUI(tk.Tk):
 
     def _create_buttons(self):
         buttons = [
-            ("📷 Kameraeinstellungen", self.open_camera_settings),
+            ("Kameraeinstellungen", self.open_camera_settings),
             ("LED Steuerung", self.open_led_controller),
             ("Sensorsignal", self.open_sensor_monitor),
             ("Einzelaufnahme (JPEG)", self.capture_jpeg),
             ("Einzelaufnahme (RAW)", self.capture_raw),
-            ("Auto-LED starten", self.start_auto_led),
+            ("Auto-LED starten", self.open_auto_led_dialog),
             ("Beenden", self.on_close),
         ]
         for text, cmd in buttons:
@@ -140,9 +140,12 @@ class SequenceRunnerGUI(tk.Tk):
     def open_sensor_monitor(self):
         SensorMonitor(self)
 
-    def start_auto_led(self):
-        # später: Histogramm-basierte Regelung
-        self.status_label.config(text="Auto-LED-Regelung noch nicht implementiert.")
+    def open_auto_led_dialog(self):
+        """Öffnet das Auto-LED-Regelungsfenster."""
+        if not hasattr(self, "auto_led_window") or not self.auto_led_window.winfo_exists():
+            self.auto_led_window = AutoLEDDialog(self)
+        else:
+            self.auto_led_window.lift()
 
     # ------------------------------------------------------------
     # Beenden
@@ -157,3 +160,144 @@ if __name__ == "__main__":
     app = SequenceRunnerGUI()
     app.protocol("WM_DELETE_WINDOW", app.on_close)
     app.mainloop()
+
+
+class AutoLEDDialog(tk.Toplevel):
+    def __init__(self, master):
+        super().__init__(master)
+        self.master = master
+        self.title("Auto-LED Regelung")
+        self.geometry("320x380")
+        self.configure(bg="#2e2e2e")
+
+        # Regelparameter
+        self.params = {
+            "low_limit": tk.IntVar(value=10),
+            "high_limit": tk.IntVar(value=10),
+            "low_fraction_target": tk.DoubleVar(value=0.05),
+            "high_fraction_target": tk.DoubleVar(value=0.05),
+            "step": tk.DoubleVar(value=2.0)
+        }
+
+        self.selected_channel = tk.StringVar(value="")
+        self.active = tk.BooleanVar(value=False)
+
+        self._build_ui()
+        self._update_channel_list()
+
+    # ------------------------------------------------------------
+    # GUI-Aufbau
+    # ------------------------------------------------------------
+    def _build_ui(self):
+        ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+        self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
+        self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
+
+        ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
+
+        for key, label in [
+            ("low_limit", "Dunkelgrenze [0–255]"),
+            ("low_fraction_target", "max. Dunkelanteil"),
+            ("high_limit", "Hellgrenze [0–255]"),
+            ("high_fraction_target", "max. Hellanteil"),
+            ("step", "Regelschritt [%]"),
+        ]:
+            ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
+            ttk.Entry(self, textvariable=self.params[key]).pack(fill="x", padx=10)
+
+        self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
+        self.status_label.pack(fill="x", pady=10)
+
+        self.toggle_button = ttk.Button(self, text="🌞 Regelung starten", command=self.toggle_auto_led)
+        self.toggle_button.pack(pady=10)
+
+        ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
+
+    # ------------------------------------------------------------
+    # Kanal-Liste aktualisieren
+    # ------------------------------------------------------------
+    def _update_channel_list(self):
+        if hasattr(self.master, "led_window") and self.master.led_window.winfo_exists():
+            menu = self.channel_menu["menu"]
+            menu.delete(0, "end")
+            for name in self.master.led_window.get_all_channels():
+                menu.add_command(label=name, command=lambda n=name: self.selected_channel.set(n))
+            if not self.selected_channel.get():
+                all_channels = self.master.led_window.get_all_channels()
+                if all_channels:
+                    self.selected_channel.set(all_channels[0])
+        else:
+            self.selected_channel.set("")
+
+    # ------------------------------------------------------------
+    # Start / Stop der Regelung
+    # ------------------------------------------------------------
+    def toggle_auto_led(self):
+        if not hasattr(self.master, "led_window") or not self.master.led_window.winfo_exists():
+            messagebox.showwarning("Hinweis", "Bitte zuerst LED-Fenster öffnen.")
+            return
+
+        if not self.selected_channel.get():
+            messagebox.showwarning("Hinweis", "Bitte einen LED-Kanal auswählen.")
+            return
+
+        self.active.set(not self.active.get())
+
+        if self.active.get():
+            self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
+            self.toggle_button.config(text="⏹ Regelung stoppen")
+            self.run_auto_led()
+        else:
+            self.status_label.config(text="Status: inaktiv")
+            self.toggle_button.config(text="🌞 Regelung starten")
+
+    # ------------------------------------------------------------
+    # Regelalgorithmus (nur ein Kanal)
+    # ------------------------------------------------------------
+    def run_auto_led(self):
+        if not self.active.get():
+            return
+
+        frame = self.master.stream.get_frame()
+        if frame is None:
+            self.after(500, self.run_auto_led)
+            return
+
+        frame_np = np.array(frame)
+        gray = np.mean(frame_np, axis=2).astype(np.uint8)
+        hist = np.histogram(gray, bins=256, range=(0, 256))[0]
+        total_pixels = gray.size
+
+        low_limit = self.params["low_limit"].get()
+        high_limit = self.params["high_limit"].get()
+        low_fraction_target = self.params["low_fraction_target"].get()
+        high_fraction_target = self.params["high_fraction_target"].get()
+        step = self.params["step"].get()
+
+        low_count = hist[:low_limit + 1].sum()
+        high_count = hist[255 - high_limit:].sum()
+        low_fraction = low_count / total_pixels
+        high_fraction = high_count / total_pixels
+
+        channel_name = self.selected_channel.get()
+        led = self.master.led_window
+
+        if led and led.winfo_exists():
+            current_value = led.sliders[channel_name].get()
+            new_value = current_value
+
+            if low_fraction > low_fraction_target:
+                new_value = min(100, current_value + step)
+            elif high_fraction > high_fraction_target:
+                new_value = max(0, current_value - step)
+
+            if new_value != current_value:
+                led.set_channel_by_name(channel_name, new_value)
+                print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
+
+        self.status_label.config(
+            text=f"{channel_name}: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}"
+        )
+
+        # Wiederholung alle 1 s
+        self.after(1000, self.run_auto_led)
