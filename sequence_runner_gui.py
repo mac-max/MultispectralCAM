@@ -155,13 +155,6 @@ class SequenceRunnerGUI(tk.Tk):
         self.stream.stop()
         self.destroy()
 
-
-if __name__ == "__main__":
-    app = SequenceRunnerGUI()
-    app.protocol("WM_DELETE_WINDOW", app.on_close)
-    app.mainloop()
-
-
 class AutoLEDDialog(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
@@ -301,3 +294,9 @@ class AutoLEDDialog(tk.Toplevel):
 
         # Wiederholung alle 1 s
         self.after(1000, self.run_auto_led)
+
+
+if __name__ == "__main__":
+    app = SequenceRunnerGUI()
+    app.protocol("WM_DELETE_WINDOW", app.on_close)
+    app.mainloop()
