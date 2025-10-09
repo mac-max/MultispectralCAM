@@ -307,7 +307,11 @@ class AutoLEDDialog(tk.Toplevel):
 
 
         if led:
-            current_value = led.sliders[channel_name].get()
+            # Aktuellen Helligkeitswert lesen (unabhängig von GUI)
+            if hasattr(led, "sliders") and channel_name in led.sliders:
+                current_value = led.sliders[channel_name].get()
+            else:
+                current_value = led.get_channel_value(channel_name) or 0.0
             new_value = current_value
 
             if low_fraction > low_fraction_target:
