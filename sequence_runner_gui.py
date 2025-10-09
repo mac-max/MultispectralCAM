@@ -132,10 +132,7 @@ class SequenceRunnerGUI(tk.Tk):
         CameraSettings(self, self.stream)
 
     def open_led_controller(self):
-        if hasattr(self, "led_window") and self.led_window.winfo_exists():
-            self.led_window.lift()
-            return
-        self.led_window = LEDController(self)
+        self.led_window = get_led_controller(self)
 
     def open_sensor_monitor(self):
         SensorMonitor(self)
@@ -309,7 +306,7 @@ class AutoLEDDialog(tk.Toplevel):
         led = self.master.get_led_controller()
 
 
-        if led and led.winfo_exists():
+        if led:
             current_value = led.sliders[channel_name].get()
             new_value = current_value
 
