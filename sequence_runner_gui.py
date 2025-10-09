@@ -154,7 +154,7 @@ class SequenceRunnerGUI(tk.Tk):
                 return
 
         # Auto-LED-Fenster öffnen
-        if not hasattr(self, "auto_led_window") or not self.auto_led_window.winfo_exists():
+        if not hasattr(self, "auto_led_window"):
             self.auto_led_window = AutoLEDDialog(self)
         else:
             self.auto_led_window.lift()
@@ -244,7 +244,7 @@ class AutoLEDDialog(tk.Toplevel):
     # Start / Stop der Regelung
     # ------------------------------------------------------------
     def toggle_auto_led(self):
-        if not hasattr(self.master, "led_window") or not self.master.led_window.winfo_exists():
+        if not hasattr(self.master, "led_window"):
             messagebox.showwarning("Hinweis", "Bitte zuerst LED-Fenster öffnen.")
             return
 
