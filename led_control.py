@@ -5,17 +5,14 @@ import busio
 import re
 from adafruit_pca9685 import PCA9685
 
-class LEDController(tk.Toplevel):
-    def __init__(self, master=None):
-        super().__init__(master)
-        self.title("LED PWM Steuerung – PCA9685 @ 0x40 & 0x41")
-        self.geometry("460x800")
+class LEDController:
+    def __init__(self, use_gui=True, master=None):
+        self.use_gui = use_gui
+        self.master = master
 
-        # Namen pro PCA, bereits sortiert (aufsteigend)
         self.channel_1_names = [
             "644 nm", "3000 K", "455 nm", "510 nm", "610 nm", "597 nm", "434 nm", "pink"
         ]
-
         self.channel_2_names = [
             "453 nm", "441 nm", "421 nm", "391 nm", "378 nm", "495 nm", "591 nm",
             "630 nm", "655 nm", "863 nm", "968 nm", "pink", "519 nm", "5000 K"
@@ -31,10 +28,20 @@ class LEDController(tk.Toplevel):
             self.pca_1.frequency = 1600
             self.pca_2.frequency = 1600
         except Exception as e:
-            ttk.Label(self, text=f"[Fehler] I2C init: {e}").pack()
+            if self.use_gui:
+                tk.Toplevel(self.master)
+                ttk.Label(self.master, text=f"[Fehler] I2C init: {e}").pack()
+            else:
+                print(f"[Fehler] I2C init: {e}")
             return
 
-        self.create_widgets()
+        self.prepare_sorted_channels()
+
+        if self.use_gui:
+            self.window = tk.Toplevel(self.master)
+            self.window.title("LED PWM Steuerung – PCA9685 @ 0x40 & 0x41")
+            self.window.geometry("460x800")
+            self.create_widgets()
 
     def get_all_channels(self):
         return [name for _, name in self.sorted_channels]
@@ -47,6 +54,14 @@ class LEDController(tk.Toplevel):
                     self.sliders[name].set(percent)
                 return
         print(f"[WARN] Kanalname '{name}' nicht gefunden.")
+
+    def get_channel_value(self, name):
+        for (pca, ch), ch_name in self.sorted_channels:
+            if ch_name == name:
+                raw_value = pca.channels[ch].duty_cycle
+                return round(raw_value / 0xFFFF * 100, 1)
+        print(f"[WARN] Kanalname '{name}' nicht gefunden.")
+        return None
 
     def set_pwm(self, pca, channel, percent):
         percent = max(0, min(100, percent))
@@ -61,23 +76,20 @@ class LEDController(tk.Toplevel):
         match = re.search(r"(\d+)", label)
         return int(match.group(1)) if match else float('inf')
 
-    def create_widgets(self):
-        # PCA 1 – sortieren
+    def prepare_sorted_channels(self):
         sorted_1 = sorted(
             [(self.pca_1, i, name) for i, name in enumerate(self.channel_1_names)],
             key=lambda x: self.extract_wavelength(x[2])
         )
-
-        # PCA 2 – sortieren (inkl. Offset!)
         sorted_2 = sorted(
             [(self.pca_2, i + 2, name) for i, name in enumerate(self.channel_2_names)],
             key=lambda x: self.extract_wavelength(x[2])
         )
-
         self.sorted_channels = [((pca, ch), name) for (pca, ch, name) in sorted_1 + sorted_2]
 
+    def create_widgets(self):
         for (pca, ch), name in self.sorted_channels:
-            frame = ttk.Frame(self)
+            frame = ttk.Frame(self.window)
             frame.pack(fill='x', padx=10, pady=2)
 
             label = ttk.Label(frame, text=f"{name}", width=10)
@@ -93,8 +105,7 @@ class LEDController(tk.Toplevel):
 
             self.sliders[name] = var
 
-        # Alles-aus-Button
-        ttk.Button(self, text="Alle Kanäle AUS", command=self.all_off).pack(pady=20)
+        ttk.Button(self.window, text="Alle Kanäle AUS", command=self.all_off).pack(pady=20)
 
     def all_off(self):
         for (pca, ch), name in self.sorted_channels:

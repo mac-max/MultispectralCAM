@@ -146,6 +146,8 @@ class SequenceRunnerGUI(tk.Tk):
             self.auto_led_window = AutoLEDDialog(self)
         else:
             self.auto_led_window.lift()
+        if not hasattr(self, "led_window") or not self.led_window.winfo_exists():
+            self.led_window = LEDController(self, use_gui=False)
 
     # ------------------------------------------------------------
     # Beenden
@@ -201,7 +203,7 @@ class AutoLEDDialog(tk.Toplevel):
         self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
         self.status_label.pack(fill="x", pady=10)
 
-        self.toggle_button = ttk.Button(self, text="🌞 Regelung starten", command=self.toggle_auto_led)
+        self.toggle_button = ttk.Button(self, text="Regelung starten", command=self.toggle_auto_led)
         self.toggle_button.pack(pady=10)
 
         ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
@@ -238,11 +240,11 @@ class AutoLEDDialog(tk.Toplevel):
 
         if self.active.get():
             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
-            self.toggle_button.config(text="⏹ Regelung stoppen")
+            self.toggle_button.config(text="Regelung stoppen")
             self.run_auto_led()
         else:
             self.status_label.config(text="Status: inaktiv")
-            self.toggle_button.config(text="🌞 Regelung starten")
+            self.toggle_button.config(text="Regelung starten")
 
     # ------------------------------------------------------------
     # Regelalgorithmus (nur ein Kanal)
