@@ -141,13 +141,23 @@ class SequenceRunnerGUI(tk.Tk):
         SensorMonitor(self)
 
     def open_auto_led_dialog(self):
-        """Öffnet das Auto-LED-Regelungsfenster."""
+        """Öffnet das Auto-LED-Regelungsfenster (stellt sicher, dass LEDController existiert)."""
+        # Prüfen, ob bereits ein LED-Controller existiert
+        if not hasattr(self, "led_window") or not getattr(self.led_window, "pca_1", None):
+            print("[INFO] Kein aktiver LED-Controller gefunden – starte headless Modus.")
+            try:
+                from led_control import LEDController
+                self.led_window = LEDController(use_gui=False)
+                print("[INFO] Headless LED-Controller erfolgreich initialisiert.")
+            except Exception as e:
+                messagebox.showerror("Fehler", f"LED-Controller konnte nicht initialisiert werden:\n{e}")
+                return
+
+        # Auto-LED-Fenster öffnen
         if not hasattr(self, "auto_led_window") or not self.auto_led_window.winfo_exists():
             self.auto_led_window = AutoLEDDialog(self)
         else:
             self.auto_led_window.lift()
-        if not hasattr(self, "led_window") or not self.led_window.winfo_exists():
-            self.led_window = LEDController(self, use_gui=False)
 
     # ------------------------------------------------------------
     # Beenden
@@ -164,6 +174,12 @@ class AutoLEDDialog(tk.Toplevel):
         self.title("Auto-LED Regelung")
         self.geometry("320x380")
         self.configure(bg="#2e2e2e")
+
+        # Sicherstellen, dass LEDController existiert
+        if not hasattr(self.master, "led_window") or not getattr(self.master.led_window, "pca_1", None):
+            print("[AutoLED] Kein LED-Controller gefunden, starte headless Instanz.")
+            from led_control import LEDController
+            self.master.led_window = LEDController(use_gui=False)
 
         # Regelparameter
         self.params = {
