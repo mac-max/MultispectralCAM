@@ -140,21 +140,33 @@ class SequenceRunnerGUI(tk.Tk):
     def open_sensor_monitor(self):
         SensorMonitor(self)
 
-    def open_auto_led_dialog(self):
-        """Öffnet das Auto-LED-Regelungsfenster (stellt sicher, dass LEDController existiert)."""
-        # Prüfen, ob bereits ein LED-Controller existiert
-        if not hasattr(self, "led_window") or not getattr(self.led_window, "pca_1", None):
+    def get_led_controller(self):
+        """Gibt sicher eine gültige LEDController-Instanz zurück (GUI oder headless)."""
+        led = getattr(self, "led_window", None)
+
+        # Wenn noch kein Controller existiert, initialisieren
+        if not led or not hasattr(led, "get_all_channels"):
             print("[INFO] Kein aktiver LED-Controller gefunden – starte headless Modus.")
             try:
                 from led_control import LEDController
                 self.led_window = LEDController(use_gui=False)
                 print("[INFO] Headless LED-Controller erfolgreich initialisiert.")
             except Exception as e:
+                from tkinter import messagebox
                 messagebox.showerror("Fehler", f"LED-Controller konnte nicht initialisiert werden:\n{e}")
-                return
+                return None
 
-        # Auto-LED-Fenster öffnen
-        if not hasattr(self, "auto_led_window"):
+        return self.led_window
+
+    def open_auto_led_dialog(self):
+        """Öffnet das Auto-LED-Regelungsfenster."""
+        # Sicherstellen, dass LED-Controller verfügbar ist
+        led = self.get_led_controller()
+        if not led:
+            return
+
+        # Fenster öffnen
+        if not hasattr(self, "auto_led_window") or not getattr(self.auto_led_window, "winfo_exists", lambda: False)():
             self.auto_led_window = AutoLEDDialog(self)
         else:
             self.auto_led_window.lift()
@@ -228,17 +240,20 @@ class AutoLEDDialog(tk.Toplevel):
     # Kanal-Liste aktualisieren
     # ------------------------------------------------------------
     def _update_channel_list(self):
-        if hasattr(self.master, "led_window"):
-            menu = self.channel_menu["menu"]
-            menu.delete(0, "end")
-            for name in self.master.led_window.get_all_channels():
-                menu.add_command(label=name, command=lambda n=name: self.selected_channel.set(n))
-            if not self.selected_channel.get():
-                all_channels = self.master.led_window.get_all_channels()
-                if all_channels:
-                    self.selected_channel.set(all_channels[0])
-        else:
+        led = self.master.get_led_controller()
+        if led is None:
             self.selected_channel.set("")
+            return
+
+        menu = self.channel_menu["menu"]
+        menu.delete(0, "end")
+
+        channels = led.get_all_channels()
+        for name in channels:
+            menu.add_command(label=name, command=lambda n=name: self.selected_channel.set(n))
+
+        if not self.selected_channel.get() and channels:
+            self.selected_channel.set(channels[0])
 
     # ------------------------------------------------------------
     # Start / Stop der Regelung
@@ -291,7 +306,8 @@ class AutoLEDDialog(tk.Toplevel):
         high_fraction = high_count / total_pixels
 
         channel_name = self.selected_channel.get()
-        led = self.master.led_window
+        led = self.master.get_led_controller()
+
 
         if led and led.winfo_exists():
             current_value = led.sliders[channel_name].get()
