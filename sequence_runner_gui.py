@@ -228,7 +228,7 @@ class AutoLEDDialog(tk.Toplevel):
     # Kanal-Liste aktualisieren
     # ------------------------------------------------------------
     def _update_channel_list(self):
-        if hasattr(self.master, "led_window") and self.master.led_window.winfo_exists():
+        if hasattr(self.master, "led_window"):
             menu = self.channel_menu["menu"]
             menu.delete(0, "end")
             for name in self.master.led_window.get_all_channels():
