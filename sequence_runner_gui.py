@@ -147,12 +147,6 @@ class SequenceRunnerGUI(tk.Tk):
     def open_camera_settings(self):
         CameraSettings(self, self.stream)
 
-    def open_led_controller(self):
-        self.led_window = get_led_controller(self)
-
-    def open_sensor_monitor(self):
-        SensorMonitor(self)
-
     def get_led_controller(self):
         """Gibt sicher eine gültige LEDController-Instanz zurück (GUI oder headless)."""
         led = getattr(self, "led_window", None)
@@ -170,6 +164,14 @@ class SequenceRunnerGUI(tk.Tk):
                 return None
 
         return self.led_window
+
+
+    def open_led_controller(self):
+        self.led_window = self.get_led_controller()
+
+    def open_sensor_monitor(self):
+        SensorMonitor(self)
+
 
     def open_auto_led_dialog(self):
         """Öffnet das Auto-LED-Regelungsfenster."""
