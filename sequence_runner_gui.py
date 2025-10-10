@@ -175,8 +175,16 @@ class SequenceRunnerGUI(tk.Tk):
             messagebox.showerror("Fehler", f"LED-Controller konnte nicht initialisiert werden:\n{e}")
             return None
 
-
     def open_led_controller(self):
+        """Öffnet oder erstellt den LED-Controller (GUI-Modus bevorzugt)."""
+        if hasattr(self, "led_window") and getattr(self.led_window, "use_gui", False):
+            try:
+                self.led_window.window.lift()
+                return
+            except Exception:
+                pass
+
+        # Neuer Controller im GUI-Modus
         self.led_window = self.get_led_controller(force_gui=True)
 
     def open_sensor_monitor(self):
