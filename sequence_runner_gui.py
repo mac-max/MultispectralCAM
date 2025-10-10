@@ -161,8 +161,6 @@ class SequenceRunnerGUI(tk.Tk):
             return led
 
         try:
-            from led_control import LEDController
-
             # Prüfen, ob GUI-Modus verfügbar ist
             use_gui = force_gui or hasattr(self, "master")
             mode_text = "mit GUI" if use_gui else "headless"
@@ -179,7 +177,7 @@ class SequenceRunnerGUI(tk.Tk):
 
 
     def open_led_controller(self):
-        self.led_window = self.get_led_controller(self, force_gui=True)
+        self.led_window = self.get_led_controller(force_gui=True)
 
     def open_sensor_monitor(self):
         SensorMonitor(self)
