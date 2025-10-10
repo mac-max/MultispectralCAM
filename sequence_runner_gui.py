@@ -147,27 +147,39 @@ class SequenceRunnerGUI(tk.Tk):
     def open_camera_settings(self):
         CameraSettings(self, self.stream)
 
-    def get_led_controller(self):
-        """Gibt sicher eine gültige LEDController-Instanz zurück (GUI oder headless)."""
+    def get_led_controller(self, force_gui=False):
+        """
+        Gibt sicher eine gültige LEDController-Instanz zurück.
+        Wenn keine existiert, wird sie erstellt:
+          - mit GUI, falls 'force_gui=True' oder Tkinter-Kontext vorhanden,
+          - sonst headless.
+        """
         led = getattr(self, "led_window", None)
 
-        # Wenn noch kein Controller existiert, initialisieren
-        if not led or not hasattr(led, "get_all_channels"):
-            print("[INFO] Kein aktiver LED-Controller gefunden – starte headless Modus.")
-            try:
-                from led_control import LEDController
-                self.led_window = LEDController(use_gui=False)
-                print("[INFO] Headless LED-Controller erfolgreich initialisiert.")
-            except Exception as e:
-                from tkinter import messagebox
-                messagebox.showerror("Fehler", f"LED-Controller konnte nicht initialisiert werden:\n{e}")
-                return None
+        # Prüfen, ob bestehender Controller gültig ist
+        if led and hasattr(led, "get_all_channels"):
+            return led
 
-        return self.led_window
+        try:
+            from led_control import LEDController
+
+            # Prüfen, ob GUI-Modus verfügbar ist
+            use_gui = force_gui or hasattr(self, "master")
+            mode_text = "mit GUI" if use_gui else "headless"
+
+            print(f"[INFO] Kein aktiver LED-Controller gefunden – starte {mode_text}-Modus.")
+            self.led_window = LEDController(use_gui=use_gui, master=getattr(self, "master", None))
+            print(f"[INFO] LED-Controller ({mode_text}) erfolgreich initialisiert.")
+            return self.led_window
+
+        except Exception as e:
+            from tkinter import messagebox
+            messagebox.showerror("Fehler", f"LED-Controller konnte nicht initialisiert werden:\n{e}")
+            return None
 
 
     def open_led_controller(self):
-        self.led_window = self.get_led_controller()
+        self.led_window = self.get_led_controller(self, force_gui=True)
 
     def open_sensor_monitor(self):
         SensorMonitor(self)
