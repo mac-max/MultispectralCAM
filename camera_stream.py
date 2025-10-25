@@ -31,6 +31,12 @@ class CameraStream:
         self.proc_lock = threading.Lock()
         self.preview_paused = False
 
+        self.debug = debug
+        self.proc_lock = threading.Lock()
+        self.stderr_lines = deque(maxlen=200)   # letzter libcamera-Output
+        self._stderr_thread = None
+        self.preview_paused = False
+
         self.start()
 
         # Nur eigene GUI erzeugen, wenn standalone=True
@@ -67,30 +73,65 @@ class CameraStream:
         return cmd
 
     def start(self):
-        """Startet den Streaming-Thread."""
-        self.running = True
-        try:
-            self.proc = subprocess.Popen(
-                self.build_command(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=10**8
-            )
-        except FileNotFoundError:
-            raise RuntimeError("libcamera-vid wurde nicht gefunden. Bitte sicherstellen, dass es installiert ist.")
+        with self.proc_lock:
+            if self.running:
+                return
+            self.running = True
+            cmd = self.build_command()
+            if self.debug:
+                print("[VID] start:", " ".join(cmd))
+            try:
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,  # <— NICHT DEVNULL!
+                    bufsize=10 ** 8
+                )
+            except FileNotFoundError:
+                self.running = False
+                raise RuntimeError("libcamera-vid nicht gefunden.")
 
-        self.thread = threading.Thread(target=self._read_stream, daemon=True)
-        self.thread.start()
+            # stderr reader
+            def _read_stderr():
+                try:
+                    for line in iter(self.proc.stderr.readline, b""):
+                        txt = line.decode(errors="replace").rstrip()
+                        self.stderr_lines.append(txt)
+                        # Optional: harmlose Meldungen filtern
+                        # if "Corrupt JPEG data" in txt: continue
+                        if self.debug and txt:
+                            print("[VID][stderr]", txt)
+                except Exception as e:
+                    if self.debug:
+                        print("[VID][stderr] reader err:", e)
+
+            self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+            self._stderr_thread.start()
+
+            self.thread = threading.Thread(target=self._read_stream, daemon=True)
+            self.thread.start()
 
     def stop(self):
-        """Stoppt Stream und Prozess."""
-        self.running = False
-        if self.proc:
-            self.proc.terminate()
-            self.proc = None
-        if self.thread:
-            self.thread.join(timeout=1)
-            self.thread = None
+        with self.proc_lock:
+            if not self.running:
+                return
+            self.running = False
+            if self.proc:
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=1.5)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                self.proc = None
+            if self.thread:
+                self.thread.join(timeout=1)
+                self.thread = None
+            if self._stderr_thread:
+                self._stderr_thread.join(timeout=1)
+                self._stderr_thread = None
+
+    def last_errors(self, n=20):
+        return "\n".join(list(self.stderr_lines)[-n:])
 
     def reconfigure(self, **kwargs):
         """Ändert Kameraeinstellungen (z. B. Auflösung, Gain, Shutter) und startet Stream neu."""
@@ -161,7 +202,7 @@ class CameraStream:
 
             # Ausführen, bei sehr alten Builds Fallback von --raw auf -r
             try:
-                subprocess.run(cmd, check=True)
+                self._run_capture(cmd, timeout=10)
             except subprocess.CalledProcessError as e:
                 # Fallback: wenn --raw nicht existiert, versuche -r
                 if not both and "--raw" in cmd:
@@ -294,6 +335,24 @@ class CameraStream:
         ttk.Button(root, text="Beenden", command=lambda: (self.stop(), root.destroy())).pack(pady=10)
         update()
         root.mainloop()
+
+    def _run_capture(self, cmd, timeout=10):
+        if self.debug:
+            print("[STILL] run:", " ".join(cmd))
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if res.returncode != 0:
+            # Kombiniere libcamera-still stderr + letzter Preview-stderr
+            msg = [
+                "[STILL] failed:",
+                "cmd: " + " ".join(cmd),
+                "stderr (still):",
+                res.stderr.strip(),
+                "— last preview stderr —",
+                self.last_errors()
+            ]
+            raise RuntimeError("\n".join(msg))
+        if self.debug and res.stderr.strip():
+            print("[STILL][stderr]", res.stderr.strip())
 
 
 # -------------------------------------------------
