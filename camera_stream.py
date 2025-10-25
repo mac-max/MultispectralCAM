@@ -28,6 +28,8 @@ class CameraStream:
         self.proc = None
         self.thread = None
 
+        self.preview_paused = False
+
         self.start()
 
         # Nur eigene GUI erzeugen, wenn standalone=True
@@ -118,6 +120,7 @@ class CameraStream:
 
         # Stream ggf. pausieren
         was_running = self.running
+self.preview_paused = True
         if was_running:
             self.stop()
 
@@ -178,65 +181,40 @@ class CameraStream:
         finally:
             if was_running:
                 self.start()
+            self.preview_paused = False
 
     # -------------------------------------------------
     # Stream-Thread
     # -------------------------------------------------
     def _read_stream(self):
-        CHUNK = 65536  # größerer Chunk
-        MAX_BUFFER = 8 * 1024 * 1024  # 8 MB Sicherheitslimit
-
-        while self.running and self.proc and self.proc.stdout:
+        """Liest kontinuierlich MJPEG-Daten und dekodiert sie zu PIL-Images."""
+        while self.running:
             try:
-                data = self.proc.stdout.read(CHUNK)
+                data = self.proc.stdout.read(4096)
                 if not data:
                     break
-
                 self.buffer += data
 
-                # Sicherheitsgurt: Buffer nicht unendlich wachsen lassen
-                if len(self.buffer) > MAX_BUFFER:
-                    # versuche, den letzten SOI zu finden und davor zu verwerfen
-                    last_soi = self.buffer.rfind(b'\xff\xd8')
-                    self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
+                start = self.buffer.find(b'\xff\xd8')
+                end = self.buffer.find(b'\xff\xd9')
 
-                # Es könnten mehrere komplette JPEGs im Buffer liegen → alle verarbeiten
-                while True:
-                    start = self.buffer.find(b'\xff\xd8')
-                    end = self.buffer.find(b'\xff\xd9', start + 2)
-                    if start == -1 or end == -1:
-                        # kein komplettes JPEG (mehr) im Buffer
-                        break
-
+                if start != -1 and end != -1 and end > start:
                     jpg = self.buffer[start:end + 2]
-                    # Rest behalten
                     self.buffer = self.buffer[end + 2:]
-
-                    # minimale Plausibilitätsprüfung, sonst überspringen
-                    if len(jpg) < 2048:
-                        continue
-
-                    arr = np.frombuffer(jpg, dtype=np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if img is None:
-                        # dekodierbar? wenn nein, einfach skippen
-                        continue
-
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    self.frame = Image.fromarray(img)
-
+                    img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
+                    if img is not None:
+                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        self.frame = Image.fromarray(img)
             except Exception as e:
                 print("Fehler im Kamera-Thread:", e)
-                # bei Fehlern etwas Luft lassen
-                import time
-                time.sleep(0.01)
-                continue
 
     # -------------------------------------------------
     # Frame-Zugriff
     # -------------------------------------------------
     def get_frame(self):
         """Gibt das zuletzt empfangene PIL.Image-Frame zurück."""
+        if self.preview_paused:
+            return None
         return self.frame
 
     # -------------------------------------------------
