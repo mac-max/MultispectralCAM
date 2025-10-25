@@ -14,7 +14,7 @@ class CameraStream:
     über libcamera-vid und stellt aktuelle Frames als PIL-Images bereit.
     """
 
-    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, standalone=True):
+    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, standalone=True, debug=True):
         self.width = width
         self.height = height
         self.framerate = framerate
