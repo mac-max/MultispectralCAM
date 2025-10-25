@@ -91,97 +91,93 @@ class CameraStream:
         self.frame = None
         self.start()
 
-    def capture_sensor(self, filename="capture.jpg", width=None, height=None,
-                           shutter=None, gain=None, return_array=False):
-
-        width = width or self.width
-        height = height or self.height
-        shutter = shutter or self.shutter
-        gain = gain or self.gain
-
-        was_running = self.running
-        if was_running:
-            self.stop()
-
-        tmpfile = filename if filename.endswith(".jpg") else filename + ".jpg"
-
-        cmd = [
-            "libcamera-still",
-            "-n",
-            "--width", str(width),
-            "--height", str(height),
-            "--immediate",
-            "--timeout", "1",
-            "-o", tmpfile,
-            "--encoding", "jpg"
-        ]
-        if shutter:
-            cmd += ["--shutter", str(shutter)]
-        if gain:
-            cmd += ["--gain", str(gain)]
-
-        print("[CAMERA] JPEG-Sensoraufnahme:", " ".join(cmd))
-        try:
-            subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            print("[ERROR] JPEG-Aufnahme fehlgeschlagen:", e)
-
-        if was_running:
-            self.start()
-
     def capture_sensor_raw(self, filename="capture.dng", width=None, height=None,
-                           shutter=None, gain=None, return_array=False):
+                           shutter=None, gain=None, fmt="dng", return_array=False):
         """
-        Nimmt ein echtes Sensor-RAW-Bild (Bayer RGGB, 10 Bit) auf.
-        Speichert als .dng oder gibt optional das Bayer-Array zurück.
+        Nimmt ein Sensor-RAW (OV5647, 10-bit Bayer) auf.
+        fmt:
+          - "dng" (empfohlen): schreibt echtes RAW-DNG.
+          - "npy": schreibt DNG und zusätzlich ein .npy-Array (und/oder gibt es zurück).
+          - "jpg"/"png"/"tiff": WARNUNG – das ist demosaiziertes 8/16-bit, kein Sensor-RAW.
         """
+        import os
+        import subprocess
+        from PIL import Image
+        import numpy as np
+
         width = width or self.width
         height = height or self.height
         shutter = shutter or self.shutter
         gain = gain or self.gain
+        fmt = (fmt or "dng").lower()
 
+        # Zielpfade & Endungen
+        def ensure_ext(path, wanted_ext):
+            base, ext = os.path.splitext(path)
+            return path if ext.lower() == f".{wanted_ext}" else f"{base}.{wanted_ext}"
+
+        # Stream ggf. pausieren
         was_running = self.running
         if was_running:
             self.stop()
 
-        tmpfile = filename if filename.endswith(".dng") else filename + ".dng"
-
-        cmd = [
-            "libcamera-still",
-            "-n",
-            "--width", str(width),
-            "--height", str(height),
-            "--raw",
-            "--immediate",
-            "--timeout", "1",
-            "-o", tmpfile,
-            "--encoding", "dng"
-        ]
-        if shutter:
-            cmd += ["--shutter", str(shutter)]
-        if gain:
-            cmd += ["--gain", str(gain)]
-
-        print("[CAMERA] RAW-Sensoraufnahme:", " ".join(cmd))
         try:
+            base_cmd = [
+                "libcamera-still",
+                "-n",
+                "--width", str(width),
+                "--height", str(height),
+                "--immediate",
+                "--timeout", "1",
+            ]
+            if shutter:
+                base_cmd += ["--shutter", str(shutter)]
+            if gain:
+                base_cmd += ["--gain", str(gain)]
+
+            out_path = filename
+
+            if fmt == "dng":
+                out_path = ensure_ext(filename, "dng")
+                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+            elif fmt == "npy":
+                # Wir erzeugen DNG und lesen es in ein Array ein; zusätzlich .npy speichern
+                out_path = ensure_ext(filename, "dng")
+                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+            elif fmt in ("jpg", "jpeg", "png", "tiff", "bmp"):
+                # Kein echtes Sensor-RAW – demosaiziert/tonemapped von libcamera
+                out_path = ensure_ext(filename, "jpg" if fmt == "jpeg" else fmt)
+                print(f"[WARN] fmt='{fmt}' ist kein Sensor-RAW. Es wird ein demosaiziertes Bild gespeichert.")
+                cmd = base_cmd + ["--encoding", ("jpg" if fmt == "jpeg" else fmt), "-o", out_path]
+            else:
+                print(f"[WARN] Unbekanntes fmt='{fmt}', verwende DNG.")
+                fmt = "dng"
+                out_path = ensure_ext(filename, "dng")
+                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+
+            print("[CAMERA] RAW-Capture:", " ".join(cmd))
             subprocess.run(cmd, check=True)
-        except subprocess.CalledProcessError as e:
-            print("[ERROR] RAW-Aufnahme fehlgeschlagen:", e)
 
-        if was_running:
-            self.start()
+            # npy-Export / Rückgabe des Arrays (nur sinnvoll bei DNG)
+            if fmt in ("dng", "npy") and os.path.exists(out_path):
+                try:
+                    img = Image.open(out_path)  # DNG -> 16-bit container, 10-bit effektiv
+                    raw = np.array(img)  # shape (H, W), dtype=uint16
+                    if fmt == "npy":
+                        npy_path = os.path.splitext(out_path)[0] + ".npy"
+                        np.save(npy_path, raw)
+                    if return_array:
+                        return raw
+                except Exception as e:
+                    print(f"[WARN] DNG konnte nicht als Array gelesen werden: {e}")
+                    if return_array:
+                        return None
 
-        # Optional: Bayer-Daten direkt als NumPy-Array laden
-        if return_array and os.path.exists(tmpfile):
-            try:
-                # libcamera DNG → 16-Bit-Bild, lineare 10-Bit-Werte in 16-Bit-Container
-                img = Image.open(tmpfile)
-                raw = np.array(img)
-                return raw  # shape: (1944, 2592), dtype=uint16
-            except Exception as e:
-                print("[WARN] RAW nicht als Array lesbar:", e)
-                return None
-        return tmpfile
+            return out_path
+
+        finally:
+            if was_running:
+                self.start()
 
     # -------------------------------------------------
     # Stream-Thread
