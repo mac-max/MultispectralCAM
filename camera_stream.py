@@ -183,26 +183,54 @@ class CameraStream:
     # Stream-Thread
     # -------------------------------------------------
     def _read_stream(self):
-        """Liest kontinuierlich MJPEG-Daten und dekodiert sie zu PIL-Images."""
-        while self.running:
+        CHUNK = 65536  # größerer Chunk
+        MAX_BUFFER = 8 * 1024 * 1024  # 8 MB Sicherheitslimit
+
+        while self.running and self.proc and self.proc.stdout:
             try:
-                data = self.proc.stdout.read(4096)
+                data = self.proc.stdout.read(CHUNK)
                 if not data:
                     break
+
                 self.buffer += data
 
-                start = self.buffer.find(b'\xff\xd8')
-                end = self.buffer.find(b'\xff\xd9')
+                # Sicherheitsgurt: Buffer nicht unendlich wachsen lassen
+                if len(self.buffer) > MAX_BUFFER:
+                    # versuche, den letzten SOI zu finden und davor zu verwerfen
+                    last_soi = self.buffer.rfind(b'\xff\xd8')
+                    self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
 
-                if start != -1 and end != -1 and end > start:
+                # Es könnten mehrere komplette JPEGs im Buffer liegen → alle verarbeiten
+                while True:
+                    start = self.buffer.find(b'\xff\xd8')
+                    end = self.buffer.find(b'\xff\xd9', start + 2)
+                    if start == -1 or end == -1:
+                        # kein komplettes JPEG (mehr) im Buffer
+                        break
+
                     jpg = self.buffer[start:end + 2]
+                    # Rest behalten
                     self.buffer = self.buffer[end + 2:]
-                    img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if img is not None:
-                        img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                        self.frame = Image.fromarray(img)
+
+                    # minimale Plausibilitätsprüfung, sonst überspringen
+                    if len(jpg) < 2048:
+                        continue
+
+                    arr = np.frombuffer(jpg, dtype=np.uint8)
+                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                    if img is None:
+                        # dekodierbar? wenn nein, einfach skippen
+                        continue
+
+                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                    self.frame = Image.fromarray(img)
+
             except Exception as e:
                 print("Fehler im Kamera-Thread:", e)
+                # bei Fehlern etwas Luft lassen
+                import time
+                time.sleep(0.01)
+                continue
 
     # -------------------------------------------------
     # Frame-Zugriff
