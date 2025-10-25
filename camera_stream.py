@@ -105,31 +105,32 @@ class CameraStream:
         self.start()
 
     def capture_sensor_raw(self, filename="capture.dng", width=None, height=None,
-                           shutter=None, gain=None, fmt="dng", return_array=False):
+                           shutter=None, gain=None, fmt="dng", return_array=False, both=False):
         """
-        Nimmt ein Sensor-RAW (OV5647, 10-bit Bayer) auf.
-        fmt:
-          - "dng" (empfohlen): schreibt echtes RAW-DNG.
-          - "npy": schreibt DNG und zusätzlich ein .npy-Array (und/oder gibt es zurück).
-          - "jpg"/"png"/"tiff": WARNUNG – das ist demosaiziertes 8/16-bit, kein Sensor-RAW.
+        OV5647 Sensor-RAW aufnehmen.
+        fmt="dng": nur DNG schreiben (empfohlen)
+        both=True: JPEG + DNG gleichzeitig (DNG-Name aus JPEG-Basename)
+        return_array=True: DNG nach der Aufnahme als np.ndarray zurückgeben
         """
-        import os
-        import subprocess
+        import os, subprocess
         from PIL import Image
         import numpy as np
 
-        width = width or self.width
-        height = height or self.height
-        shutter = shutter or self.shutter
-        gain = gain or self.gain
-        fmt = (fmt or "dng").lower()
-
-        # Zielpfade & Endungen
-        def ensure_ext(path, wanted_ext):
+        def _prepare_output_path(path, wanted_ext):
+            path = os.path.expanduser(path)
             base, ext = os.path.splitext(path)
-            return path if ext.lower() == f".{wanted_ext}" else f"{base}.{wanted_ext}"
+            if ext.lower() != f".{wanted_ext}":
+                path = f"{base}.{wanted_ext}"
+            folder = os.path.dirname(path) or "."
+            os.makedirs(folder, exist_ok=True)
+            return path
 
-        # Stream ggf. pausieren
+        w = width or self.width
+        h = height or self.height
+        sh = shutter or self.shutter
+        gn = gain or self.gain
+
+        # Vorschau sicher pausieren
         was_running = self.running
         self.preview_paused = True
         if was_running:
@@ -139,55 +140,55 @@ class CameraStream:
             base_cmd = [
                 "libcamera-still",
                 "-n",
-                "--width", str(width),
-                "--height", str(height),
+                "--width", str(w),
+                "--height", str(h),
                 "--immediate",
                 "--timeout", "1",
+                "--denoise", "cdn_off",
             ]
-            if shutter:
-                base_cmd += ["--shutter", str(shutter)]
-            if gain:
-                base_cmd += ["--gain", str(gain)]
+            if sh: base_cmd += ["--shutter", str(sh)]
+            if gn: base_cmd += ["--gain", str(gn)]
 
-            out_path = filename
-
-            if fmt == "dng":
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
-            elif fmt == "npy":
-                # Wir erzeugen DNG und lesen es in ein Array ein; zusätzlich .npy speichern
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
-            elif fmt in ("jpg", "jpeg", "png", "tiff", "bmp"):
-                # Kein echtes Sensor-RAW – demosaiziert/tonemapped von libcamera
-                out_path = ensure_ext(filename, "jpg" if fmt == "jpeg" else fmt)
-                print(f"[WARN] fmt='{fmt}' ist kein Sensor-RAW. Es wird ein demosaiziertes Bild gespeichert.")
-                cmd = base_cmd + ["--encoding", ("jpg" if fmt == "jpeg" else fmt), "-o", out_path]
+            if both:
+                # JPEG + DNG: -r und JPEG-Pfad setzen
+                jpg_path = _prepare_output_path(filename, "jpg")
+                cmd = base_cmd + ["-r", "-o", jpg_path]
+                dng_path = os.path.splitext(jpg_path)[0] + ".dng"
             else:
-                print(f"[WARN] Unbekanntes fmt='{fmt}', verwende DNG.")
-                fmt = "dng"
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+                # Nur DNG: --raw und DNG-Pfad setzen
+                dng_path = _prepare_output_path(filename, "dng")
+                cmd = base_cmd + ["--raw", "-o", dng_path]
 
-            print("[CAMERA] RAW-Capture:", " ".join(cmd))
-            subprocess.run(cmd, check=True)
+            # Ausführen, bei sehr alten Builds Fallback von --raw auf -r
+            try:
+                subprocess.run(cmd, check=True)
+            except subprocess.CalledProcessError as e:
+                # Fallback: wenn --raw nicht existiert, versuche -r
+                if not both and "--raw" in cmd:
+                    cmd_fallback = [c for c in cmd if c != "--raw"]
+                    cmd_fallback.insert(len(base_cmd), "-r")
+                    # Bei -r braucht libcamera-still normalerweise einen "Haupt"-Output;
+                    # wenn ein DNG-Name gesetzt war, vergeben wir zusätzlich einen JPEG,
+                    # das DNG landet trotzdem beim Basename.
+                    jpg_tmp = os.path.splitext(dng_path)[0] + ".jpg"
+                    cmd_fallback = [c if c != dng_path else jpg_tmp for c in cmd_fallback]
+                    subprocess.run(cmd_fallback, check=True)
+                    # DNG-Pfad im Fallback:
+                    dng_path = os.path.splitext(jpg_tmp)[0] + ".dng"
+                else:
+                    raise
 
-            # npy-Export / Rückgabe des Arrays (nur sinnvoll bei DNG)
-            if fmt in ("dng", "npy") and os.path.exists(out_path):
+            # Optional DNG als Array zurückgeben
+            if return_array:
                 try:
-                    img = Image.open(out_path)  # DNG -> 16-bit container, 10-bit effektiv
-                    raw = np.array(img)  # shape (H, W), dtype=uint16
-                    if fmt == "npy":
-                        npy_path = os.path.splitext(out_path)[0] + ".npy"
-                        np.save(npy_path, raw)
-                    if return_array:
-                        return raw
-                except Exception as e:
-                    print(f"[WARN] DNG konnte nicht als Array gelesen werden: {e}")
-                    if return_array:
-                        return None
+                    img = Image.open(dng_path)  # 16-bit Container, effektiv 10-bit
+                    arr = np.array(img)  # shape (H, W), dtype=uint16
+                    return arr
+                except Exception as ex:
+                    print(f"[WARN] DNG nicht als Array lesbar: {ex}")
+                    return None
 
-            return out_path
+            return dng_path
 
         finally:
             if was_running:
