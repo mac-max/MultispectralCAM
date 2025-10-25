@@ -28,6 +28,7 @@ class CameraStream:
         self.proc = None
         self.thread = None
 
+        self.proc_lock = threading.Lock()
         self.preview_paused = False
 
         self.start()
@@ -53,6 +54,12 @@ class CameraStream:
             "--inline",
             "-o", "-"
         ]
+        self.proc = subprocess.Popen(
+            self.build_command(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,  # <<—
+            bufsize=10 ** 8
+        )
         if self.shutter:
             cmd += ["--shutter", str(self.shutter)]
         if self.gain:
@@ -66,6 +73,7 @@ class CameraStream:
             self.proc = subprocess.Popen(
                 self.build_command(),
                 stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
                 bufsize=10**8
             )
         except FileNotFoundError:
@@ -79,8 +87,10 @@ class CameraStream:
         self.running = False
         if self.proc:
             self.proc.terminate()
+            self.proc = None
         if self.thread:
             self.thread.join(timeout=1)
+            self.thread = None
 
     def reconfigure(self, **kwargs):
         """Ändert Kameraeinstellungen (z. B. Auflösung, Gain, Shutter) und startet Stream neu."""
@@ -209,54 +219,50 @@ class CameraStream:
     #         except Exception as e:
     #             print("Fehler im Kamera-Thread:", e)
     def _read_stream(self):
-        CHUNK = 65536  # größerer Chunk
-        MAX_BUFFER = 8 * 1024 * 1024  # 8 MB Sicherheitslimit
-
+        CHUNK = 65536
+        MAX_BUFFER = 8 * 1024 * 1024
         while self.running and self.proc and self.proc.stdout:
             try:
                 data = self.proc.stdout.read(CHUNK)
                 if not data:
                     break
-
                 self.buffer += data
 
-                # Sicherheitsgurt: Buffer nicht unendlich wachsen lassen
                 if len(self.buffer) > MAX_BUFFER:
-                    # versuche, den letzten SOI zu finden und davor zu verwerfen
                     last_soi = self.buffer.rfind(b'\xff\xd8')
                     self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
 
-                # Es könnten mehrere komplette JPEGs im Buffer liegen → alle verarbeiten
+                # alle kompletten Frames im Buffer verarbeiten
                 while True:
                     start = self.buffer.find(b'\xff\xd8')
+                    if start == -1:
+                        # kein SOI im Buffer
+                        self.buffer = self.buffer[-2:]  # Rest klein halten
+                        break
                     end = self.buffer.find(b'\xff\xd9', start + 2)
-                    if start == -1 or end == -1:
-                        # kein komplettes JPEG (mehr) im Buffer
+                    if end == -1:
+                        # Frame noch unvollständig
+                        # kleinen Tail behalten, Rest vor SOI wegwerfen
+                        self.buffer = self.buffer[start:]
                         break
 
                     jpg = self.buffer[start:end + 2]
-                    # Rest behalten
                     self.buffer = self.buffer[end + 2:]
 
-                    # minimale Plausibilitätsprüfung, sonst überspringen
                     if len(jpg) < 2048:
                         continue
 
                     arr = np.frombuffer(jpg, dtype=np.uint8)
                     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
                     if img is None:
-                        # dekodierbar? wenn nein, einfach skippen
                         continue
-
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    self.frame = Image.fromarray(img)
-
+                    if not self.preview_paused:
+                        self.frame = Image.fromarray(img)
             except Exception as e:
                 print("Fehler im Kamera-Thread:", e)
-                # bei Fehlern etwas Luft lassen
-                import time
+                import time;
                 time.sleep(0.01)
-                continue
 
     # -------------------------------------------------
     # Frame-Zugriff
