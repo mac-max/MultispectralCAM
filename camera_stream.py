@@ -44,6 +44,7 @@ class CameraStream:
         cmd = [
             "libcamera-vid",
             "--nopreview",
+            "--denoise", "cdn_off",
             "-t", "0",
             "--width", str(self.width),
             "--height", str(self.height),
