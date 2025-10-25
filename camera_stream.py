@@ -120,7 +120,7 @@ class CameraStream:
 
         # Stream ggf. pausieren
         was_running = self.running
-self.preview_paused = True
+        self.preview_paused = True
         if was_running:
             self.stop()
 
