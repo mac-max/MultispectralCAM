@@ -125,7 +125,7 @@ class SequenceRunnerGUI(tk.Tk):
         if not path:
             return
         self.status_label.config(text="Aufnahme läuft…")
-        self.stream.capture_raw(filename=path, fmt="jpg")
+        self.stream.capture_sensor(filename=path, fmt="jpg")
         self.status_label.config(text=f"JPEG gespeichert: {path}")
         messagebox.showinfo("Aufnahme abgeschlossen", f"Bild gespeichert:\n{path}")
 

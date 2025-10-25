@@ -91,6 +91,44 @@ class CameraStream:
         self.frame = None
         self.start()
 
+    def capture_sensor(self, filename="capture.jpg", width=None, height=None,
+                           shutter=None, gain=None, return_array=False):
+
+        width = width or self.width
+        height = height or self.height
+        shutter = shutter or self.shutter
+        gain = gain or self.gain
+
+        was_running = self.running
+        if was_running:
+            self.stop()
+
+        tmpfile = filename if filename.endswith(".jpg") else filename + ".jpg"
+
+        cmd = [
+            "libcamera-still",
+            "-n",
+            "--width", str(width),
+            "--height", str(height),
+            "--immediate",
+            "--timeout", "1",
+            "-o", tmpfile,
+            "--encoding", "jpg"
+        ]
+        if shutter:
+            cmd += ["--shutter", str(shutter)]
+        if gain:
+            cmd += ["--gain", str(gain)]
+
+        print("[CAMERA] JPEG-Sensoraufnahme:", " ".join(cmd))
+        try:
+            subprocess.run(cmd, check=True)
+        except subprocess.CalledProcessError as e:
+            print("[ERROR] JPEG-Aufnahme fehlgeschlagen:", e)
+
+        if was_running:
+            self.start()
+
     def capture_sensor_raw(self, filename="capture.dng", width=None, height=None,
                            shutter=None, gain=None, return_array=False):
         """
