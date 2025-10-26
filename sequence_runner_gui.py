@@ -235,6 +235,15 @@ class AutoLEDDialog(tk.Toplevel):
             "step": tk.DoubleVar(value=2.0)
         }
 
+        # Zustandsgrößen für adaptiven Regler
+        self.step = 20.0  # Startschritt in %
+        self.min_step = 0.1  # Endkriterium
+        self.prev_direction = 0  # -1: dimmen, +1: heller, 0: kein Bedarf
+        self.loop_ms = 300  # Regler-Periode (ms) – ggf. 200..500 testen
+
+        # Anzeige der Schrittgröße
+        self.step_var = tk.StringVar(value=f"{self.step:.2f} %")
+
         self.selected_channel = tk.StringVar(value="")
         self.active = tk.BooleanVar(value=False)
 
@@ -260,6 +269,9 @@ class AutoLEDDialog(tk.Toplevel):
         ]:
             ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
             ttk.Entry(self, textvariable=self.params[key]).pack(fill="x", padx=10)
+
+        ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
+        ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
 
         self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
         self.status_label.pack(fill="x", pady=10)
@@ -303,6 +315,23 @@ class AutoLEDDialog(tk.Toplevel):
         self.active.set(not self.active.get())
 
         if self.active.get():
+
+            # Reset Regelzustand
+            self.step = 20.0
+            self.prev_direction = 0
+            self.step_var.set(f"{self.step:.2f} %")
+
+            # Alle LEDs auf 0 %
+            led = self.master.get_led_controller()
+            if not led:
+                self.active.set(False)
+                return
+            try:
+                for name in led.get_all_channels():
+                    led.set_channel_by_name(name, 0.0)
+            except Exception as e:
+                print("[AUTO-LED] Reset aller Kanäle fehlgeschlagen:", e)
+
             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
             self.toggle_button.config(text="Regelung stoppen")
             self.run_auto_led()
@@ -319,52 +348,80 @@ class AutoLEDDialog(tk.Toplevel):
 
         frame = self.master.stream.get_frame()
         if frame is None:
-            self.after(500, self.run_auto_led)
+            self.after(self.loop_ms, self.run_auto_led)
             return
 
+        # Histogramm (Grau) berechnen
         frame_np = np.array(frame)
-        gray = np.mean(frame_np, axis=2).astype(np.uint8)
-        hist = np.histogram(gray, bins=256, range=(0, 256))[0]
-        total_pixels = gray.size
+        gray = np.mean(frame_np, axis=2).astype(np.uint8).ravel()
+        hist, _ = np.histogram(gray, bins=256, range=(0, 256))
+        total = gray.size if gray.size else 1
 
-        low_limit = self.params["low_limit"].get()
-        high_limit = self.params["high_limit"].get()
-        low_fraction_target = self.params["low_fraction_target"].get()
-        high_fraction_target = self.params["high_fraction_target"].get()
-        step = self.params["step"].get()
+        # Ziele lesen
+        low_limit = int(self.params["low_limit"].get())
+        high_limit = int(self.params["high_limit"].get())
+        low_target = float(self.params["low_fraction_target"].get())
+        high_target = float(self.params["high_fraction_target"].get())
 
         low_count = hist[:low_limit + 1].sum()
         high_count = hist[255 - high_limit:].sum()
-        low_fraction = low_count / total_pixels
-        high_fraction = high_count / total_pixels
+        low_frac = low_count / total
+        high_frac = high_count / total
 
-        channel_name = self.selected_channel.get()
+        # Richtung bestimmen:
+        # Priorität: Überbelichtung vermeiden -> erst dimmen, sonst aufhellen, sonst 0
+        if high_frac > high_target:
+            direction = -1
+        elif low_frac > low_target:
+            direction = +1
+        else:
+            direction = 0
+
+        ch = self.selected_channel.get()
         led = self.master.get_led_controller()
+        if not led or not ch:
+            self.after(self.loop_ms, self.run_auto_led)
+            return
 
+        # aktuellen Wert lesen (GUI/Headless robust)
+        if hasattr(led, "sliders") and ch in getattr(led, "sliders", {}):
+            current = float(led.sliders[ch].get())
+        else:
+            current = float(led.get_channel_value(ch) or 0.0)
 
-        if led:
-            # Aktuellen Helligkeitswert lesen (unabhängig von GUI)
-            if hasattr(led, "sliders") and channel_name in led.sliders:
-                current_value = led.sliders[channel_name].get()
-            else:
-                current_value = led.get_channel_value(channel_name) or 0.0
-            new_value = current_value
+        new_value = current
 
-            if low_fraction > low_fraction_target:
-                new_value = min(100, current_value + step)
-            elif high_fraction > high_fraction_target:
-                new_value = max(0, current_value - step)
+        # Schrittweiten-Adaptation: bei Vorzeichenwechsel halbieren (bis 0.1 %)
+        if self.prev_direction != 0 and direction != 0 and (direction != self.prev_direction):
+            self.step = max(self.step / 2.0, self.min_step)
+            self.step_var.set(f"{self.step:.2f} %")
 
-            if new_value != current_value:
-                led.set_channel_by_name(channel_name, new_value)
-                print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
+        # Stellgröße anwenden
+        if direction != 0 and self.step > 0.0:
+            new_value = max(0.0, min(100.0, current + direction * self.step))
+            if abs(new_value - current) >= 0.001:  # Rauschen vermeiden
+                led.set_channel_by_name(ch, new_value)
+                print(
+                    f"[AUTO-LED] {ch}: {current:.2f}% -> {new_value:.2f}%  | step={self.step:.2f}% dir={'+' if direction > 0 else '-'}")
 
+        # Status aktualisieren
         self.status_label.config(
-            text=f"{channel_name}: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}"
+            text=f"{ch}: dunkel={low_frac:.1%}, hell={high_frac:.1%}, step={self.step:.2f}%"
         )
 
-        # Wiederholung alle 1 s
-        self.after(1000, self.run_auto_led)
+        # Abbruchkriterien:
+        # 1) Beide Ziele erfüllt und Schritt bereits sehr klein -> beenden
+        if direction == 0 and self.step <= self.min_step:
+            self.active.set(False)
+            self.toggle_button.config(text="🌞 Regelung starten")
+            self.status_label.config(text=f"Fertig: {ch} stabil (step={self.step:.2f}%)")
+            return
+
+        # 2) Ziele erfüllt, aber Schritt noch groß -> noch ein paar Zyklen laufen lassen
+        # (Kein spezielles Handling nötig – direction==0 bewegt nichts mehr)
+
+        self.prev_direction = direction
+        self.after(self.loop_ms, self.run_auto_led)
 
 
 if __name__ == "__main__":
