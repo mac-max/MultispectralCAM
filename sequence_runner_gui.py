@@ -362,63 +362,51 @@ class AutoLEDDialog(tk.Toplevel):
     # Regelalgorithmus (nur ein Kanal)
     # ------------------------------------------------------------
     def run_auto_led(self):
-        # Reentrancy-Guard: falls voriger Tick noch läuft, einfach später nochmal
-        if self._loop_busy:
-            self.after(self.loop_ms, self.run_auto_led)
+        if not self.active.get():
             return
-        self._loop_busy = True
 
-        try:
-            if not self.active.get():
-                return
+        frame = self.master.stream.get_frame()
+        if frame is None:
+            self.after(500, self.run_auto_led)
+            return
 
-            frame = self.master.stream.get_frame()
-            if frame is None:
-                self._loop_busy = False
-                self.after(self.loop_ms, self.run_auto_led)
-                return
+        frame_np = np.array(frame)
+        gray = np.mean(frame_np, axis=2).astype(np.uint8)
+        hist = np.histogram(gray, bins=256, range=(0, 256))[0]
+        total_pixels = gray.size
 
-            # Histogramm (Grau)
-            f = np.array(frame)
-            gray = np.mean(f, axis=2).astype(np.uint8).ravel()
-            hist, _ = np.histogram(gray, bins=256, range=(0, 256))
-            total = max(1, gray.size)
+        low_limit = self.params["low_limit"].get()
+        high_limit = self.params["high_limit"].get()
+        low_fraction_target = self.params["low_fraction_target"].get()
+        high_fraction_target = self.params["high_fraction_target"].get()
+        step = self.params["step"].get()
 
-            # Ziele & Epsilon
-            low_limit = int(self.params["low_limit"].get())
-            high_limit = int(self.params["high_limit"].get())
-            low_target = float(self.params["low_fraction_target"].get())
-            high_target = float(self.params["high_fraction_target"].get())
-            eps = 0.002  # 0.2% Toleranz, verhindert Zappeln
+        low_count = hist[:low_limit + 1].sum()
+        high_count = hist[255 - high_limit:].sum()
+        low_fraction = low_count / total_pixels
+        high_fraction = high_count / total_pixels
 
-            low_frac = hist[:low_limit + 1].sum() / total
-            high_frac = hist[255 - high_limit:].sum() / total
+        channel_name = self.selected_channel.get()
+        led = self.master.get_led_controller()
 
-            # Fehlermaß (positiv = zu dunkel; negativ = zu hell; 0 = ok)
-            err_dark = max(0.0, low_frac - low_target)  # wie viel zu dunkel
-            err_bright = max(0.0, high_frac - high_target)  # wie viel zu hell
-            error = err_dark - err_bright
+        # Fehlermaß (positiv = zu dunkel; negativ = zu hell; 0 = ok)
+        err_dark = max(0.0, low_fraction  - low_fraction_target)   # wie viel zu dunkel
+        err_bright = max(0.0, high_fraction - high_fraction_target) # wie viel zu hell
+        error = err_dark - err_bright
+        # Richtung
+        if error > eps:
+            direction = +1  # heller
+        elif error < -eps:
+            direction = -1  # dunkler
+        else:
+            direction = 0
 
-            # Richtung
-            if error > eps:
-                direction = +1  # heller
-            elif error < -eps:
-                direction = -1  # dunkler
+        if led:
+            # Aktuellen Helligkeitswert lesen (unabhängig von GUI)
+            if hasattr(led, "sliders") and channel_name in led.sliders:
+                current_value = led.sliders[channel_name].get()
             else:
-                direction = 0
-
-            ch = self.selected_channel.get()
-            led = self.master.get_led_controller()
-            if not led or not ch:
-                self._loop_busy = False
-                self.after(self.loop_ms, self.run_auto_led)
-                return
-
-            # aktuellen Wert lesen (GUI/Headless robust)
-            if hasattr(led, "sliders") and ch in getattr(led, "sliders", {}):
-                current = float(led.sliders[ch].get())
-            else:
-                current = float(led.get_channel_value(ch) or 0.0)
+                current_value = led.get_channel_value(channel_name) or 0.0
 
             # Schritt-Anpassung:
             # - Vorzeichenwechsel  -> halbieren
@@ -436,36 +424,24 @@ class AutoLEDDialog(tk.Toplevel):
                         self._stagnation_count = 0
             self.step_var.set(f"{self.step:.2f} %")
 
-            # Stellgröße
-            new_value = current
-            if direction != 0 and self.step > 0.0:
-                # Sicherheitsklemmen + große Schritte in Grenzen
-                new_value = max(0.0, min(100.0, current + direction * self.step))
-                if abs(new_value - current) >= 0.001:
-                    led.set_channel_by_name(ch, new_value)
 
-            # Status
-            self.status_label.config(
-                text=f"{ch}: dunkel={low_frac:.1%}, hell={high_frac:.1%}, step={self.step:.2f}%, dir={direction:+d}"
-            )
+            new_value = current_value
 
-            self.prev_direction = direction
-            self._last_error = error
-            self._cycle_count += 1
+            if low_fraction > low_fraction_target:
+                new_value = min(100, current_value + self.step)
+            elif high_fraction > high_fraction_target:
+                new_value = max(0, current_value - self.step)
 
-            # Abbruchkriterien
-            if (direction == 0 and self.step <= self.min_step) or self._cycle_count >= self._max_cycles:
-                self.active.set(False)
-                self.toggle_button.config(text="Regelung starten")
-                self.status_label.config(text=f"Fertig: {ch} (step={self.step:.2f}%)")
-                self._loop_busy = False
-                return
+            if new_value != current_value:
+                led.set_channel_by_name(channel_name, new_value)
+                print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
 
-        finally:
-            self._loop_busy = False
-            # nächster Tick
-            if self.active.get():
-                self.after(self.loop_ms, self.run_auto_led)
+        self.status_label.config(
+            text=f"{channel_name}: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}"
+        )
+
+        # Wiederholung alle 1 s
+        self.after(1000, self.run_auto_led)
 
 
 if __name__ == "__main__":
