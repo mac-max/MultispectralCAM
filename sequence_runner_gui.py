@@ -380,6 +380,7 @@ class AutoLEDDialog(tk.Toplevel):
         low_fraction_target = self.params["low_fraction_target"].get()
         high_fraction_target = self.params["high_fraction_target"].get()
         step = self.params["step"].get()
+        eps = 0.002   # 0.2% Toleranz, verhindert Zappeln
 
         low_count = hist[:low_limit + 1].sum()
         high_count = hist[255 - high_limit:].sum()
