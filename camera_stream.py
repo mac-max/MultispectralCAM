@@ -153,11 +153,11 @@ class CameraStream:
 
             if fmt == "dng":
                 out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+                cmd = base_cmd + ["--raw", "-o", out_path]
             elif fmt == "npy":
                 # Wir erzeugen DNG und lesen es in ein Array ein; zusätzlich .npy speichern
                 out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+                cmd = base_cmd + ["--raw", "-o", out_path]
             elif fmt in ("jpg", "jpeg", "png", "tiff", "bmp"):
                 # Kein echtes Sensor-RAW – demosaiziert/tonemapped von libcamera
                 out_path = ensure_ext(filename, "jpg" if fmt == "jpeg" else fmt)
@@ -167,7 +167,7 @@ class CameraStream:
                 print(f"[WARN] Unbekanntes fmt='{fmt}', verwende DNG.")
                 fmt = "dng"
                 out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "--encoding", "dng", "-o", out_path]
+                cmd = base_cmd + ["--raw", "-o", out_path]
 
             print("[CAMERA] RAW-Capture:", " ".join(cmd))
             subprocess.run(cmd, check=True)
