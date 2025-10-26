@@ -54,12 +54,12 @@ class CameraStream:
             "--inline",
             "-o", "-"
         ]
-        self.proc = subprocess.Popen(
-            self.build_command(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,  # <<—
-            bufsize=10 ** 8
-        )
+        # self.proc = subprocess.Popen(
+        #     self.build_command(),
+        #     stdout=subprocess.PIPE,
+        #     stderr=subprocess.DEVNULL,  # <<—
+        #     bufsize=10 ** 8
+        # )
         if self.shutter:
             cmd += ["--shutter", str(self.shutter)]
         if self.gain:
