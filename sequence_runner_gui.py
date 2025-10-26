@@ -463,7 +463,7 @@ class AutoLEDDialog(tk.Toplevel):
 
 
         self.status_label.config(
-            text=f"{ch} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, step={self.step:.2f}%, dir={direction:+d}"
+            text=f"{self.selected_channel.get()} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, step={self.step:.2f}%, dir={direction:+d}"
         )
 
         # Wiederholung alle 1 s
