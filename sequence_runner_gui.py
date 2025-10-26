@@ -263,6 +263,14 @@ class AutoLEDDialog(tk.Toplevel):
         ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
         self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
         self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
+        # Wahl des Histogrammkanals
+        self.hist_channel = tk.StringVar(value="Gray")  # Optionen: Gray, R, G, B
+
+        ttk.Label(self, text="Histogrammkanal:",
+                  foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+        ttk.OptionMenu(self, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B").pack(
+            fill="x", padx=10, pady=(0, 10)
+        )
 
         ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
 
@@ -370,10 +378,26 @@ class AutoLEDDialog(tk.Toplevel):
             self.after(500, self.run_auto_led)
             return
 
-        frame_np = np.array(frame)
-        gray = np.mean(frame_np, axis=2).astype(np.uint8)
-        hist = np.histogram(gray, bins=256, range=(0, 256))[0]
-        total_pixels = gray.size
+        # --- Histogrammkanal wählen ---
+        f = np.array(frame)  # HxWx3, dtype=uint8 vom MJPEG-Stream
+        sel = self.hist_channel.get()
+
+        if sel == "R":
+            chan = f[:, :, 0]
+        elif sel == "G":
+            chan = f[:, :, 1]
+        elif sel == "B":
+            chan = f[:, :, 2]
+        else:
+            # Gray: einfacher Mittelwert; alternativ Luma: 0.2126*R + 0.7152*G + 0.0722*B
+            chan = np.mean(f, axis=2)
+
+        # auf uint8 bringen und flatten
+        chan = chan.astype(np.uint8, copy=False).ravel()
+
+        # Histogramm des gewählten Kanals
+        hist, _ = np.histogram(chan, bins=256, range=(0, 256))
+        total_pixels = max(1, chan.size)
 
         low_limit = self.params["low_limit"].get()
         high_limit = self.params["high_limit"].get()
@@ -437,8 +461,9 @@ class AutoLEDDialog(tk.Toplevel):
                 led.set_channel_by_name(channel_name, new_value)
                 print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
 
+
         self.status_label.config(
-            text=f"{channel_name}: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}"
+            text=f"{ch} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, step={self.step:.2f}%, dir={direction:+d}"
         )
 
         # Wiederholung alle 1 s
