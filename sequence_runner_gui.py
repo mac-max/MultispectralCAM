@@ -362,6 +362,7 @@ class AutoLEDDialog(tk.Toplevel):
             self.run_auto_led()
         else:
             # --- STOP ---
+            led = self.master.get_led_controller()
             led.all_off()
             self.active.set(False)
             self.status_label.config(text="Status: inaktiv")
