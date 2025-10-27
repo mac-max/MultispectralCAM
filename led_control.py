@@ -6,7 +6,7 @@ import re
 from adafruit_pca9685 import PCA9685
 
 class LEDController:
-    def __init__(self, use_gui=True, master=None):
+    def __init__(self, use_gui=False, master=None):
         self.use_gui = use_gui
         self.master = master
 
