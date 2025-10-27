@@ -212,385 +212,498 @@ class SequenceRunnerGUI(tk.Tk):
         self.stream.stop()
         self.destroy()
 
+
+# in deiner AutoLEDDialog-Klasse (gleiche Datei wie bisher)
+
+from AutoLED import AutoLEDCore
+
 class AutoLEDDialog(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
         self.master = master
         self.title("Auto-LED Regelung")
-        self.geometry("320x380")
+        self.geometry("320x360")
         self.configure(bg="#2e2e2e")
 
-        # Sicherstellen, dass LEDController existiert
-        if not hasattr(self.master, "led_window") or not getattr(self.master.led_window, "pca_1", None):
-            print("[AutoLED] Kein LED-Controller gefunden, starte headless Instanz.")
-            from led_control import LEDController
-            self.master.led_window = LEDController(use_gui=False)
+        # sicherstellen, dass ein headless LEDController existiert
+        if not self.master.get_led_controller(force_gui=False):
+            self.destroy(); return
 
-        # Regelparameter
-        self.params = {
-            "low_limit": tk.IntVar(value=10),
-            "high_limit": tk.IntVar(value=10),
-            "low_fraction_target": tk.DoubleVar(value=0.05),
-            "high_fraction_target": tk.DoubleVar(value=0.05),
-            "start_step": tk.DoubleVar(value=20.0),  # <- war "step"
-        }
+        # Parameter-Variablen (wie gehabt) ...
+        # self.params = {..., "start_step": tk.DoubleVar(value=20.0)}
+        # self.hist_channel = tk.StringVar(value="Gray")
+        # self.selected_channel = tk.StringVar(value="")
+        # self.current_pwm, self.step_var etc. wie vorher
 
-        # Zustandsgrößen für adaptiven Regler
-        self.step = 20.0
-        self.min_step = 0.1
-        self.prev_direction = 0
-        self.loop_ms = 300
-        self.step_var = tk.StringVar(value=f"{self.step:.2f} %")
-        self._loop_busy = False  # Reentrancy-Guard
-        self._last_error = None  # Für “Verbesserung?”
-        self._stagnation_count = 0  # Zyklen ohne Verbesserung
-        self._max_cycles = 200  # Sicherheitsabbbruch
-        self._cycle_count = 0
-        # Live-Anzeige des PWM-Werts (0..100 %)
-        self.current_pwm = tk.DoubleVar(value=0.0)
-
-        # (optional) kompakter ttk-Style
-        style = ttk.Style(self)
-        try:
-            style.configure("Compact.TLabel", padding=(2, 1))
-            style.configure("Compact.TButton", padding=(4, 2))
-            style.configure("Compact.Horizontal.TProgressbar", thickness=8)
-        except Exception:
-            pass
-
-        self.selected_channel = tk.StringVar(value="")
-        self.active = tk.BooleanVar(value=False)
+        # Core
+        self.core = AutoLEDCore(self.master, on_update=self._on_core_update)
 
         self._build_ui()
         self._update_channel_list()
 
-    # ------------------------------------------------------------
-    # GUI-Aufbau
-    # ------------------------------------------------------------
-    # def _build_ui(self):
-    #     ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
-    #     self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
-    #     self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
-    #     # Wahl des Histogrammkanals
-    #     self.hist_channel = tk.StringVar(value="Gray")  # Optionen: Gray, R, G, B
-    #
-    #     ttk.Label(self, text="Histogrammkanal:",
-    #               foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
-    #     ttk.OptionMenu(self, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B").pack(
-    #         fill="x", padx=10, pady=(0, 10)
-    #     )
-    #
-    #     ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
-    #
-    #     for key, label in [
-    #         ("low_limit", "Dunkelgrenze [0–255]"),
-    #         ("low_fraction_target", "max. Dunkelanteil"),
-    #         ("high_limit", "Hellgrenze [0–255]"),
-    #         ("high_fraction_target", "max. Hellanteil"),
-    #         ("start_step", "Start-Schritt [%]"),  # <- neue Bezeichnung
-    #     ]:
-    #         ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
-    #         entry = ttk.Entry(self, textvariable=self.params[key])
-    #         entry.pack(fill="x", padx=10)
-    #         if key == "start_step":
-    #             self._entry_start_step = entry  # zum Ein/Ausblenden merken
-    #
-    #     ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
-    #     ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
-    #
-    #     self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
-    #     self.status_label.pack(fill="x", pady=10)
-    #
-    #     self.toggle_button = ttk.Button(self, text="Regelung starten", command=self.toggle_auto_led)
-    #     self.toggle_button.pack(pady=10)
-    #
-    #     ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
-    def _build_ui(self):
-        root = ttk.Frame(self)
-        root.pack(fill="both", expand=True, padx=8, pady=8)
-
-        # Zeile 0: Kanalwahl + Start/Stop Button kompakt
-        row = 0
-        ttk.Label(root, text="LED-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w")
-        self.channel_menu = ttk.OptionMenu(root, self.selected_channel, "")
-        self.channel_menu.grid(row=row, column=1, sticky="ew", padx=(4, 0))
-        self.toggle_button = ttk.Button(root, text="Regelung starten",
-                                        style="Compact.TButton", command=self.toggle_auto_led)
-        self.toggle_button.grid(row=row, column=2, sticky="ew", padx=(6, 0))
-        root.columnconfigure(1, weight=1)
-
-        # Zeile 1: Histogrammkanal
-        row += 1
-        ttk.Label(root, text="Hist-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 0))
-        self.hist_channel = tk.StringVar(value="Gray")
-        ttk.OptionMenu(root, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B") \
-            .grid(row=row, column=1, sticky="ew", padx=(4, 0), pady=(6, 0))
-
-        # Zeile 2–: Parameter in kompakter 2-Spalten-Matrix
-        row += 1
-        params = ttk.LabelFrame(root, text="Parameter")
-        params.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        params.columnconfigure(1, weight=1)
-
-        def add_param(r, label_text, var):
-            ttk.Label(params, text=label_text, style="Compact.TLabel").grid(row=r, column=0, sticky="w", padx=(4, 2),
-                                                                            pady=2)
-            e = ttk.Entry(params, textvariable=var, width=8)
-            e.grid(row=r, column=1, sticky="ew", padx=(0, 4), pady=2)
-            return e
-
-        r = 0
-        add_param(r, "Dunkelgrenze [0–255]", self.params["low_limit"]);
-        r += 1
-        add_param(r, "max. Dunkelanteil", self.params["low_fraction_target"]);
-        r += 1
-        add_param(r, "Hellgrenze [0–255]", self.params["high_limit"]);
-        r += 1
-        add_param(r, "max. Hellanteil", self.params["high_fraction_target"]);
-        r += 1
-        e_start = add_param(r, "Start-Schritt [%]", self.params["start_step"]);
-        r += 1
-        self._entry_start_step = e_start
-
-        # Zeile (row+1): Live-Step + PWM-Anzeige
-        row += 1
-        info = ttk.Frame(root)
-        info.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-        info.columnconfigure(1, weight=1)
-
-        ttk.Label(info, text="Schritt:", style="Compact.TLabel").grid(row=0, column=0, sticky="w")
-        ttk.Label(info, textvariable=self.step_var, style="Compact.TLabel").grid(row=0, column=1, sticky="w")
-
-        # PWM Anzeige (Progressbar + Zahl)
-        ttk.Label(info, text="PWM:", style="Compact.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
-        self.pwm_bar = ttk.Progressbar(info, style="Compact.Horizontal.TProgressbar",
-                                       orient="horizontal", mode="determinate", maximum=100.0,
-                                       variable=self.current_pwm)
-        self.pwm_bar.grid(row=1, column=1, sticky="ew", pady=(4, 0))
-        self.pwm_label = ttk.Label(info, textvariable=self.current_pwm, style="Compact.TLabel")
-        self.pwm_label.grid(row=1, column=2, sticky="e", padx=(6, 0))
-
-        # Statuszeile + Schließen
-        row += 1
-        self.status_label = ttk.Label(root, text="Status: inaktiv", style="Compact.TLabel")
-        self.status_label.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
-
-        row += 1
-        ttk.Button(root, text="Schließen", style="Compact.TButton", command=self.destroy) \
-            .grid(row=row, column=2, sticky="e", pady=(8, 0))
-
-    # ------------------------------------------------------------
-    # Kanal-Liste aktualisieren
-    # ------------------------------------------------------------
-    def _update_channel_list(self):
-        led = self.master.get_led_controller()
-        if led is None:
-            self.selected_channel.set("")
-            return
-
-        menu = self.channel_menu["menu"]
-        menu.delete(0, "end")
-
-        channels = led.get_all_channels()
-        for name in channels:
-            menu.add_command(label=name, command=lambda n=name: self.selected_channel.set(n))
-
-        if not self.selected_channel.get() and channels:
-            self.selected_channel.set(channels[0])
-
-
-
-    def _reset_leds_async(self, channel_only=True):
-        def task():
-            led = self.master.get_led_controller()
-            if not led:
-                return
-            try:
-                if channel_only:
-                    ch = self.selected_channel.get()
-                    if ch:
-                        led.set_channel_by_name(ch, 0.0)
-                else:
-                    led.all_off()
-            except Exception as e:
-                print("[AUTO-LED] Reset fehlgeschlagen:", e)
-
-        threading.Thread(target=task, daemon=True).start()
-
-    # ------------------------------------------------------------
-    # Start / Stop der Regelung
-    # ------------------------------------------------------------
-    def toggle_auto_led(self):
-        if not self.active.get():
-            # --- START ---
-            # Reset interner Zustand
-            self.step = 20.0
-            self.prev_direction = 0
-            self._last_error = None
-            self._stagnation_count = 0
-            self._cycle_count = 0
-            self.step_var.set(f"{self.step:.2f} %")
-            self._reset_leds_async(channel_only=False)
-
-            # Start-Schritt aus Feld lesen (Fallback 20.0), clampen
-            try:
-                start = float(self.params["start_step"].get())
-            except Exception:
-                start = 20.0
-            self.step = max(0.05, min(50.0, start))  # Grenzen: 0.05..50 %
-            self.step_var.set(f"{self.step:.2f} %")
-
-            # Feld während der Regelung deaktivieren
-            if hasattr(self, "_entry_start_step"):
-                self._entry_start_step.state(["disabled"])
-
-            # Start-Schritt aus Feld lesen
-            try:
-                start = float(self.params["start_step"].get())
-            except Exception:
-                start = 20.0
-            self.step = max(0.05, min(50.0, start))
-            self.step_var.set(f"{self.step:.2f} %")
-
-            # Eingabefeld während der Regelung deaktivieren
-            if hasattr(self, "_entry_start_step"):
-                self._entry_start_step.state(["disabled"])
-
-            self.active.set(True)
-            self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
-            self.toggle_button.config(text="Regelung stoppen")
-            self.run_auto_led()
-        else:
-            # --- STOP ---
-            led = self.master.get_led_controller()
-            self._reset_leds_async()
-            self.active.set(False)
-            self.status_label.config(text="Status: inaktiv")
-            self.toggle_button.config(text="Regelung starten")
-
-            if hasattr(self, "_entry_start_step"):
-                self._entry_start_step.state(["!disabled"])
-
-            # Feld wieder aktivieren
-            if hasattr(self, "_entry_start_step"):
-                self._entry_start_step.state(["!disabled"])
-
-    # ------------------------------------------------------------
-    # Regelalgorithmus (nur ein Kanal)
-    # ------------------------------------------------------------
-
-    def run_auto_led(self):
-        if not self.active.get():
-            return
-
-        frame = self.master.stream.get_frame()
-        if frame is None:
-            self.after(self.loop_ms, self.run_auto_led)
-            return
-
-        # --- Histogrammkanal wählen ---
-        f = np.array(frame)  # HxWx3, dtype=uint8 vom MJPEG-Stream
-        sel = self.hist_channel.get()
-        if sel == "R":
-            chan = f[:, :, 0]
-        elif sel == "G":
-            chan = f[:, :, 1]
-        elif sel == "B":
-            chan = f[:, :, 2]
-        else:
-            # Gray: einfacher Mittelwert (alternativ Luma-Weighted)
-            chan = np.mean(f, axis=2)
-
-        chan = chan.astype(np.uint8, copy=False).ravel()
-        hist, _ = np.histogram(chan, bins=256, range=(0, 256))
-        total_pixels = max(1, chan.size)
-
-        # Parameter
-        low_limit = int(self.params["low_limit"].get())
-        high_limit = int(self.params["high_limit"].get())
-        low_fraction_target = float(self.params["low_fraction_target"].get())
-        high_fraction_target = float(self.params["high_fraction_target"].get())
-        eps = 0.002  # 0.2 %
-
-        low_fraction = hist[:low_limit + 1].sum() / total_pixels
-        high_fraction = hist[255 - high_limit:].sum() / total_pixels
-
-        # Fehlermaß & Richtung (einheitliche Logik)
-        err_dark = max(0.0, low_fraction - low_fraction_target)  # zu dunkel
-        err_bright = max(0.0, high_fraction - high_fraction_target)  # zu hell
-        error = err_dark - err_bright
-
-        if error > eps:
-            direction = +1  # heller
-        elif error < -eps:
-            direction = -1  # dunkler
-        else:
-            direction = 0
-
-        channel_name = self.selected_channel.get()
-        led = self.master.get_led_controller()
-        if not led or not channel_name:
-            self.after(self.loop_ms, self.run_auto_led)
-            return
-
-        # aktuellen Wert lesen (GUI/Headless robust)
-        if hasattr(led, "sliders") and channel_name in getattr(led, "sliders", {}):
-            current_value = float(led.sliders[channel_name].get())
-        else:
-            current_value = float(led.get_channel_value(channel_name) or 0.0)
-        self.current_pwm.set(round(float(current_value), 2))
-
-        # Schritt-Anpassung
-        # 1) Vorzeichenwechsel → Schritt halbieren (nur wenn direction != 0)
-        if (self.prev_direction != 0) and (direction != 0) and (direction != self.prev_direction):
-            self.step = max(self.step / 2.0, self.min_step)
-            # optional: Debug
-            # print(f"[AUTO-LED] sign flip → step={self.step:.3f}%")
-
-        # 2) Keine Verbesserung → nach 2 Zyklen halbieren
-        improved = True
-        if self._last_error is not None:
-            improved = (abs(error) < abs(self._last_error)) or (direction == 0)
-            if not improved:
-                self._stagnation_count += 1
-                if self._stagnation_count >= 2:
-                    self.step = max(self.step / 2.0, self.min_step)
-                    self._stagnation_count = 0
-                    # print(f"[AUTO-LED] stagnation → step={self.step:.3f}%")
-            else:
-                self._stagnation_count = 0
-
-        self.step_var.set(f"{self.step:.2f} %")
-
-        # Stellgröße anwenden – ausschließlich gemäß 'direction'
-        new_value = current_value
-        if direction != 0 and self.step > 0.0:
-            new_value = max(0.0, min(100.0, current_value + direction * self.step))
-            if abs(new_value - current_value) >= 1e-3:
-                led.set_channel_by_name(channel_name, new_value)
-                if abs(new_value - current_value) >= 1e-3:
-                    led.set_channel_by_name(channel_name, new_value)
-                    self.current_pwm.set(round(float(new_value), 2))
-
-        # Status
+    def _on_core_update(self, st):
+        # Live-Update in die GUI spiegeln (kompakt)
+        self.current_pwm.set(round(st["pwm"], 2))
+        self.step_var.set(f"{st['step']:.2f} %")
         self.status_label.config(
-            text=f"{channel_name} [{sel}]  L:{low_fraction:.1%}  H:{high_fraction:.1%}  step:{self.step:.2f}%"
+            text=f"{st['channel']} [{st['hist_channel']}] "
+                 f"L:{st['low_fraction']:.1%} H:{st['high_fraction']:.1%} "
+                 f"step:{st['step']:.2f}%"
         )
 
-        # Zustände für nächste Iteration MERKEN (wichtig!)
-        self.prev_direction = direction
-        self._last_error = error
-        self._cycle_count += 1
+    def toggle_auto_led(self):
+        if not self.core.active:
+            # Start
+            ch = self.selected_channel.get()
+            if not ch:
+                return
+            params = {
+                "low_limit": self.params["low_limit"].get(),
+                "high_limit": self.params["high_limit"].get(),
+                "low_fraction_target": self.params["low_fraction_target"].get(),
+                "high_fraction_target": self.params["high_fraction_target"].get(),
+            }
+            try:
+                start_step = float(self.params["start_step"].get())
+            except Exception:
+                start_step = 20.0
 
-        # Abbruch: Ziele erreicht und Schritt klein genug ODER Sicherheitslimit
-        if (direction == 0 and self.step <= self.min_step) or (self._cycle_count >= self._max_cycles):
-            self.active.set(False)
+            # Eingabefeld sperren
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["disabled"])
+
+            self.core.start(
+                channel_name=ch,
+                hist_channel=self.hist_channel.get(),
+                params=params,
+                start_step=start_step
+            )
+            self.toggle_button.config(text="Regelung stoppen")
+            self.status_label.config(text=f"Regelung aktiv für: {ch} (Start={start_step:.2f}%)")
+        else:
+            # Stop
+            self.core.stop()
             self.toggle_button.config(text="Regelung starten")
-            self.status_label.config(text=f"Fertig: {channel_name} (step={self.step:.2f}%)")
-            return
+            self.status_label.config(text="Status: inaktiv")
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["!disabled"])
 
-        # Weiter
-        self.after(self.loop_ms, self.run_auto_led)
+# Headless start:
+# from AutoLED import AutoLEDCore
+#
+# class SequenceRunnerGUI(tk.Tk):
+#     def __init__(self):
+#         ...
+#         self.auto_led_core = AutoLEDCore(self, on_update=self._auto_led_status)
+#
+#     def _auto_led_status(self, st):
+#         # z.B. in Statusbar spiegeln
+#         self.status_label.config(
+#             text=f"[AutoLED] {st['channel']} {st['hist_channel']} "
+#                  f"L:{st['low_fraction']:.1%} H:{st['high_fraction']:.1%} "
+#                  f"PWM:{st['pwm']:.1f}% step:{st['step']:.2f}%"
+#         )
+#
+#     def start_auto_led_headless(self):
+#         # Beispiel: erstelle sinnvolle Defaults, ggf. aus GUI übernehmen
+#         led = self.get_led_controller(force_gui=False)
+#         if not led: return
+#         channels = led.get_all_channels()
+#         if not channels: return
+#         params = dict(
+#             low_limit=10, high_limit=10,
+#             low_fraction_target=0.05, high_fraction_target=0.05
+#         )
+#         self.auto_led_core.start(
+#             channel_name=channels[0],
+#             hist_channel="Gray",
+#             params=params,
+#             start_step=20.0
+#         )
+#
+#     def stop_auto_led_headless(self):
+#         self.auto_led_core.stop()
+
+
+# class AutoLEDDialog(tk.Toplevel):
+#     def __init__(self, master):
+#         super().__init__(master)
+#         self.master = master
+#         self.title("Auto-LED Regelung")
+#         self.geometry("320x380")
+#         self.configure(bg="#2e2e2e")
+#
+#         # Sicherstellen, dass LEDController existiert
+#         if not hasattr(self.master, "led_window") or not getattr(self.master.led_window, "pca_1", None):
+#             print("[AutoLED] Kein LED-Controller gefunden, starte headless Instanz.")
+#             from led_control import LEDController
+#             self.master.led_window = LEDController(use_gui=False)
+#
+#         # Regelparameter
+#         self.params = {
+#             "low_limit": tk.IntVar(value=10),
+#             "high_limit": tk.IntVar(value=10),
+#             "low_fraction_target": tk.DoubleVar(value=0.05),
+#             "high_fraction_target": tk.DoubleVar(value=0.05),
+#             "start_step": tk.DoubleVar(value=20.0),  # <- war "step"
+#         }
+#
+#         # Zustandsgrößen für adaptiven Regler
+#         self.step = 20.0
+#         self.min_step = 0.1
+#         self.prev_direction = 0
+#         self.loop_ms = 300
+#         self.step_var = tk.StringVar(value=f"{self.step:.2f} %")
+#         self._loop_busy = False  # Reentrancy-Guard
+#         self._last_error = None  # Für “Verbesserung?”
+#         self._stagnation_count = 0  # Zyklen ohne Verbesserung
+#         self._max_cycles = 200  # Sicherheitsabbbruch
+#         self._cycle_count = 0
+#         # Live-Anzeige des PWM-Werts (0..100 %)
+#         self.current_pwm = tk.DoubleVar(value=0.0)
+#
+#         # (optional) kompakter ttk-Style
+#         style = ttk.Style(self)
+#         try:
+#             style.configure("Compact.TLabel", padding=(2, 1))
+#             style.configure("Compact.TButton", padding=(4, 2))
+#             style.configure("Compact.Horizontal.TProgressbar", thickness=8)
+#         except Exception:
+#             pass
+#
+#         self.selected_channel = tk.StringVar(value="")
+#         self.active = tk.BooleanVar(value=False)
+#
+#         self._build_ui()
+#         self._update_channel_list()
+#
+#     # ------------------------------------------------------------
+#     # GUI-Aufbau
+#     # ------------------------------------------------------------
+#     # def _build_ui(self):
+#     #     ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+#     #     self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
+#     #     self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
+#     #     # Wahl des Histogrammkanals
+#     #     self.hist_channel = tk.StringVar(value="Gray")  # Optionen: Gray, R, G, B
+#     #
+#     #     ttk.Label(self, text="Histogrammkanal:",
+#     #               foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+#     #     ttk.OptionMenu(self, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B").pack(
+#     #         fill="x", padx=10, pady=(0, 10)
+#     #     )
+#     #
+#     #     ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
+#     #
+#     #     for key, label in [
+#     #         ("low_limit", "Dunkelgrenze [0–255]"),
+#     #         ("low_fraction_target", "max. Dunkelanteil"),
+#     #         ("high_limit", "Hellgrenze [0–255]"),
+#     #         ("high_fraction_target", "max. Hellanteil"),
+#     #         ("start_step", "Start-Schritt [%]"),  # <- neue Bezeichnung
+#     #     ]:
+#     #         ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
+#     #         entry = ttk.Entry(self, textvariable=self.params[key])
+#     #         entry.pack(fill="x", padx=10)
+#     #         if key == "start_step":
+#     #             self._entry_start_step = entry  # zum Ein/Ausblenden merken
+#     #
+#     #     ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
+#     #     ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
+#     #
+#     #     self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
+#     #     self.status_label.pack(fill="x", pady=10)
+#     #
+#     #     self.toggle_button = ttk.Button(self, text="Regelung starten", command=self.toggle_auto_led)
+#     #     self.toggle_button.pack(pady=10)
+#     #
+#     #     ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
+#     def _build_ui(self):
+#         root = ttk.Frame(self)
+#         root.pack(fill="both", expand=True, padx=8, pady=8)
+#
+#         # Zeile 0: Kanalwahl + Start/Stop Button kompakt
+#         row = 0
+#         ttk.Label(root, text="LED-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w")
+#         self.channel_menu = ttk.OptionMenu(root, self.selected_channel, "")
+#         self.channel_menu.grid(row=row, column=1, sticky="ew", padx=(4, 0))
+#         self.toggle_button = ttk.Button(root, text="Regelung starten",
+#                                         style="Compact.TButton", command=self.toggle_auto_led)
+#         self.toggle_button.grid(row=row, column=2, sticky="ew", padx=(6, 0))
+#         root.columnconfigure(1, weight=1)
+#
+#         # Zeile 1: Histogrammkanal
+#         row += 1
+#         ttk.Label(root, text="Hist-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 0))
+#         self.hist_channel = tk.StringVar(value="Gray")
+#         ttk.OptionMenu(root, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B") \
+#             .grid(row=row, column=1, sticky="ew", padx=(4, 0), pady=(6, 0))
+#
+#         # Zeile 2–: Parameter in kompakter 2-Spalten-Matrix
+#         row += 1
+#         params = ttk.LabelFrame(root, text="Parameter")
+#         params.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+#         params.columnconfigure(1, weight=1)
+#
+#         def add_param(r, label_text, var):
+#             ttk.Label(params, text=label_text, style="Compact.TLabel").grid(row=r, column=0, sticky="w", padx=(4, 2),
+#                                                                             pady=2)
+#             e = ttk.Entry(params, textvariable=var, width=8)
+#             e.grid(row=r, column=1, sticky="ew", padx=(0, 4), pady=2)
+#             return e
+#
+#         r = 0
+#         add_param(r, "Dunkelgrenze [0–255]", self.params["low_limit"]);
+#         r += 1
+#         add_param(r, "max. Dunkelanteil", self.params["low_fraction_target"]);
+#         r += 1
+#         add_param(r, "Hellgrenze [0–255]", self.params["high_limit"]);
+#         r += 1
+#         add_param(r, "max. Hellanteil", self.params["high_fraction_target"]);
+#         r += 1
+#         e_start = add_param(r, "Start-Schritt [%]", self.params["start_step"]);
+#         r += 1
+#         self._entry_start_step = e_start
+#
+#         # Zeile (row+1): Live-Step + PWM-Anzeige
+#         row += 1
+#         info = ttk.Frame(root)
+#         info.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+#         info.columnconfigure(1, weight=1)
+#
+#         ttk.Label(info, text="Schritt:", style="Compact.TLabel").grid(row=0, column=0, sticky="w")
+#         ttk.Label(info, textvariable=self.step_var, style="Compact.TLabel").grid(row=0, column=1, sticky="w")
+#
+#         # PWM Anzeige (Progressbar + Zahl)
+#         ttk.Label(info, text="PWM:", style="Compact.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+#         self.pwm_bar = ttk.Progressbar(info, style="Compact.Horizontal.TProgressbar",
+#                                        orient="horizontal", mode="determinate", maximum=100.0,
+#                                        variable=self.current_pwm)
+#         self.pwm_bar.grid(row=1, column=1, sticky="ew", pady=(4, 0))
+#         self.pwm_label = ttk.Label(info, textvariable=self.current_pwm, style="Compact.TLabel")
+#         self.pwm_label.grid(row=1, column=2, sticky="e", padx=(6, 0))
+#
+#         # Statuszeile + Schließen
+#         row += 1
+#         self.status_label = ttk.Label(root, text="Status: inaktiv", style="Compact.TLabel")
+#         self.status_label.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+#
+#         row += 1
+#         ttk.Button(root, text="Schließen", style="Compact.TButton", command=self.destroy) \
+#             .grid(row=row, column=2, sticky="e", pady=(8, 0))
+#
+#     # ------------------------------------------------------------
+#     # Kanal-Liste aktualisieren
+#     # ------------------------------------------------------------
+#     def _update_channel_list(self):
+#         led = self.master.get_led_controller()
+#         if led is None:
+#             self.selected_channel.set("")
+#             return
+#
+#         menu = self.channel_menu["menu"]
+#         menu.delete(0, "end")
+#
+#         channels = led.get_all_channels()
+#         for name in channels:
+#             menu.add_command(label=name, command=lambda n=name: self.selected_channel.set(n))
+#
+#         if not self.selected_channel.get() and channels:
+#             self.selected_channel.set(channels[0])
+#
+#
+#
+#     def _reset_leds_async(self, channel_only=True):
+#         def task():
+#             led = self.master.get_led_controller()
+#             if not led:
+#                 return
+#             try:
+#                 if channel_only:
+#                     ch = self.selected_channel.get()
+#                     if ch:
+#                         led.set_channel_by_name(ch, 0.0)
+#                 else:
+#                     led.all_off()
+#             except Exception as e:
+#                 print("[AUTO-LED] Reset fehlgeschlagen:", e)
+#
+#         threading.Thread(target=task, daemon=True).start()
+#
+#     # ------------------------------------------------------------
+#     # Start / Stop der Regelung
+#     # ------------------------------------------------------------
+#     def toggle_auto_led(self):
+#         if not self.active.get():
+#             # --- START ---
+#             # Reset interner Zustand
+#             self.step = 20.0
+#             self.prev_direction = 0
+#             self._last_error = None
+#             self._stagnation_count = 0
+#             self._cycle_count = 0
+#             self.step_var.set(f"{self.step:.2f} %")
+#             self._reset_leds_async(channel_only=False)
+#
+#             # Start-Schritt aus Feld lesen (Fallback 20.0), clampen
+#             try:
+#                 start = float(self.params["start_step"].get())
+#             except Exception:
+#                 start = 20.0
+#             self.step = max(0.05, min(50.0, start))  # Grenzen: 0.05..50 %
+#             self.step_var.set(f"{self.step:.2f} %")
+#
+#             # Feld während der Regelung deaktivieren
+#             if hasattr(self, "_entry_start_step"):
+#                 self._entry_start_step.state(["disabled"])
+#
+#             # Start-Schritt aus Feld lesen
+#             try:
+#                 start = float(self.params["start_step"].get())
+#             except Exception:
+#                 start = 20.0
+#             self.step = max(0.05, min(50.0, start))
+#             self.step_var.set(f"{self.step:.2f} %")
+#
+#             # Eingabefeld während der Regelung deaktivieren
+#             if hasattr(self, "_entry_start_step"):
+#                 self._entry_start_step.state(["disabled"])
+#
+#             self.active.set(True)
+#             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
+#             self.toggle_button.config(text="Regelung stoppen")
+#             self.run_auto_led()
+#         else:
+#             # --- STOP ---
+#             led = self.master.get_led_controller()
+#             self._reset_leds_async()
+#             self.active.set(False)
+#             self.status_label.config(text="Status: inaktiv")
+#             self.toggle_button.config(text="Regelung starten")
+#
+#             if hasattr(self, "_entry_start_step"):
+#                 self._entry_start_step.state(["!disabled"])
+#
+#             # Feld wieder aktivieren
+#             if hasattr(self, "_entry_start_step"):
+#                 self._entry_start_step.state(["!disabled"])
+#
+#     # ------------------------------------------------------------
+#     # Regelalgorithmus (nur ein Kanal)
+#     # ------------------------------------------------------------
+#
+#     def run_auto_led(self):
+#         if not self.active.get():
+#             return
+#
+#         frame = self.master.stream.get_frame()
+#         if frame is None:
+#             self.after(self.loop_ms, self.run_auto_led)
+#             return
+#
+#         # --- Histogrammkanal wählen ---
+#         f = np.array(frame)  # HxWx3, dtype=uint8 vom MJPEG-Stream
+#         sel = self.hist_channel.get()
+#         if sel == "R":
+#             chan = f[:, :, 0]
+#         elif sel == "G":
+#             chan = f[:, :, 1]
+#         elif sel == "B":
+#             chan = f[:, :, 2]
+#         else:
+#             # Gray: einfacher Mittelwert (alternativ Luma-Weighted)
+#             chan = np.mean(f, axis=2)
+#
+#         chan = chan.astype(np.uint8, copy=False).ravel()
+#         hist, _ = np.histogram(chan, bins=256, range=(0, 256))
+#         total_pixels = max(1, chan.size)
+#
+#         # Parameter
+#         low_limit = int(self.params["low_limit"].get())
+#         high_limit = int(self.params["high_limit"].get())
+#         low_fraction_target = float(self.params["low_fraction_target"].get())
+#         high_fraction_target = float(self.params["high_fraction_target"].get())
+#         eps = 0.002  # 0.2 %
+#
+#         low_fraction = hist[:low_limit + 1].sum() / total_pixels
+#         high_fraction = hist[255 - high_limit:].sum() / total_pixels
+#
+#         # Fehlermaß & Richtung (einheitliche Logik)
+#         err_dark = max(0.0, low_fraction - low_fraction_target)  # zu dunkel
+#         err_bright = max(0.0, high_fraction - high_fraction_target)  # zu hell
+#         error = err_dark - err_bright
+#
+#         if error > eps:
+#             direction = +1  # heller
+#         elif error < -eps:
+#             direction = -1  # dunkler
+#         else:
+#             direction = 0
+#
+#         channel_name = self.selected_channel.get()
+#         led = self.master.get_led_controller()
+#         if not led or not channel_name:
+#             self.after(self.loop_ms, self.run_auto_led)
+#             return
+#
+#         # aktuellen Wert lesen (GUI/Headless robust)
+#         if hasattr(led, "sliders") and channel_name in getattr(led, "sliders", {}):
+#             current_value = float(led.sliders[channel_name].get())
+#         else:
+#             current_value = float(led.get_channel_value(channel_name) or 0.0)
+#         self.current_pwm.set(round(float(current_value), 2))
+#
+#         # Schritt-Anpassung
+#         # 1) Vorzeichenwechsel → Schritt halbieren (nur wenn direction != 0)
+#         if (self.prev_direction != 0) and (direction != 0) and (direction != self.prev_direction):
+#             self.step = max(self.step / 2.0, self.min_step)
+#             # optional: Debug
+#             # print(f"[AUTO-LED] sign flip → step={self.step:.3f}%")
+#
+#         # 2) Keine Verbesserung → nach 2 Zyklen halbieren
+#         improved = True
+#         if self._last_error is not None:
+#             improved = (abs(error) < abs(self._last_error)) or (direction == 0)
+#             if not improved:
+#                 self._stagnation_count += 1
+#                 if self._stagnation_count >= 2:
+#                     self.step = max(self.step / 2.0, self.min_step)
+#                     self._stagnation_count = 0
+#                     # print(f"[AUTO-LED] stagnation → step={self.step:.3f}%")
+#             else:
+#                 self._stagnation_count = 0
+#
+#         self.step_var.set(f"{self.step:.2f} %")
+#
+#         # Stellgröße anwenden – ausschließlich gemäß 'direction'
+#         new_value = current_value
+#         if direction != 0 and self.step > 0.0:
+#             new_value = max(0.0, min(100.0, current_value + direction * self.step))
+#             if abs(new_value - current_value) >= 1e-3:
+#                 led.set_channel_by_name(channel_name, new_value)
+#                 if abs(new_value - current_value) >= 1e-3:
+#                     led.set_channel_by_name(channel_name, new_value)
+#                     self.current_pwm.set(round(float(new_value), 2))
+#
+#         # Status
+#         self.status_label.config(
+#             text=f"{channel_name} [{sel}]  L:{low_fraction:.1%}  H:{high_fraction:.1%}  step:{self.step:.2f}%"
+#         )
+#
+#         # Zustände für nächste Iteration MERKEN (wichtig!)
+#         self.prev_direction = direction
+#         self._last_error = error
+#         self._cycle_count += 1
+#
+#         # Abbruch: Ziele erreicht und Schritt klein genug ODER Sicherheitslimit
+#         if (direction == 0 and self.step <= self.min_step) or (self._cycle_count >= self._max_cycles):
+#             self.active.set(False)
+#             self.toggle_button.config(text="Regelung starten")
+#             self.status_label.config(text=f"Fertig: {channel_name} (step={self.step:.2f}%)")
+#             return
+#
+#         # Weiter
+#         self.after(self.loop_ms, self.run_auto_led)
 
 
 if __name__ == "__main__":
