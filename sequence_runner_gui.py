@@ -327,8 +327,7 @@ class AutoLEDDialog(tk.Toplevel):
                     if ch:
                         led.set_channel_by_name(ch, 0.0)
                 else:
-                    for name in led.get_all_channels():
-                        led.set_channel_by_name(name, 0.0)
+                    led.all_off()
             except Exception as e:
                 print("[AUTO-LED] Reset fehlgeschlagen:", e)
 
@@ -348,13 +347,7 @@ class AutoLEDDialog(tk.Toplevel):
             self._cycle_count = 0
             self.step_var.set(f"{self.step:.2f} %")
 
-            # LED-Controller holen
-            led = self.master.get_led_controller()
-            if not led:
-                return
-
-            # Nur den gewählten Kanal auf 0 (blockiert nicht den Mainthread)
-            self._reset_leds_async(channel_only=True)
+            self._reset_leds_async(channel_only=False)
 
             self.active.set(True)
             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
@@ -363,7 +356,7 @@ class AutoLEDDialog(tk.Toplevel):
         else:
             # --- STOP ---
             led = self.master.get_led_controller()
-            led.all_off()
+            self._reset_leds_async()
             self.active.set(False)
             self.status_label.config(text="Status: inaktiv")
             self.toggle_button.config(text="Regelung starten")
