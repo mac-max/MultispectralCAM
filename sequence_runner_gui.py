@@ -120,7 +120,7 @@ class SequenceRunnerGUI(tk.Tk):
     def capture_jpeg(self):
         """Einzelaufnahme als JPEG speichern."""
         path = filedialog.asksaveasfilename(
-            defaultextension=".jpg", filetypes=[("JPEG-Dateien", "*.jpg"), ("Alle Dateien", "*.*")]
+            initialdir="/media/frank/ESD-USB/Images", defaultextension=".jpg", filetypes=[("JPEG-Dateien", "*.jpg"), ("Alle Dateien", "*.*")]
         )
         if not path:
             return
@@ -132,7 +132,7 @@ class SequenceRunnerGUI(tk.Tk):
     def capture_raw(self):
         """Echte RAW/DNG-Aufnahme (Bayer 10 Bit)."""
         path = filedialog.asksaveasfilename(
-            defaultextension=".dng", filetypes=[("RAW DNG-Dateien", "*.dng"), ("Alle Dateien", "*.*")]
+            initialdir="/media/frank/ESD-USB/Images", defaultextension=".dng", filetypes=[("RAW DNG-Dateien", "*.dng"), ("Alle Dateien", "*.*")]
         )
         if not path:
             return
@@ -369,19 +369,117 @@ class AutoLEDDialog(tk.Toplevel):
     # ------------------------------------------------------------
     # Regelalgorithmus (nur ein Kanal)
     # ------------------------------------------------------------
+    # def run_auto_led(self):
+    #     if not self.active.get():
+    #         return
+    #
+    #     frame = self.master.stream.get_frame()
+    #     if frame is None:
+    #         self.after(500, self.run_auto_led)
+    #         return
+    #
+    #     # --- Histogrammkanal wählen ---
+    #     f = np.array(frame)  # HxWx3, dtype=uint8 vom MJPEG-Stream
+    #     sel = self.hist_channel.get()
+    #
+    #     if sel == "R":
+    #         chan = f[:, :, 0]
+    #     elif sel == "G":
+    #         chan = f[:, :, 1]
+    #     elif sel == "B":
+    #         chan = f[:, :, 2]
+    #     else:
+    #         # Gray: einfacher Mittelwert; alternativ Luma: 0.2126*R + 0.7152*G + 0.0722*B
+    #         chan = np.mean(f, axis=2)
+    #
+    #     # auf uint8 bringen und flatten
+    #     chan = chan.astype(np.uint8, copy=False).ravel()
+    #
+    #     # Histogramm des gewählten Kanals
+    #     hist, _ = np.histogram(chan, bins=256, range=(0, 256))
+    #     total_pixels = max(1, chan.size)
+    #
+    #     low_limit = self.params["low_limit"].get()
+    #     high_limit = self.params["high_limit"].get()
+    #     low_fraction_target = self.params["low_fraction_target"].get()
+    #     high_fraction_target = self.params["high_fraction_target"].get()
+    #     step = self.params["step"].get()
+    #     eps = 0.002   # 0.2% Toleranz, verhindert Zappeln
+    #
+    #     low_count = hist[:low_limit + 1].sum()
+    #     high_count = hist[255 - high_limit:].sum()
+    #     low_fraction = low_count / total_pixels
+    #     high_fraction = high_count / total_pixels
+    #
+    #     channel_name = self.selected_channel.get()
+    #     led = self.master.get_led_controller()
+    #
+    #     # Fehlermaß (positiv = zu dunkel; negativ = zu hell; 0 = ok)
+    #     err_dark = max(0.0, low_fraction  - low_fraction_target)   # wie viel zu dunkel
+    #     err_bright = max(0.0, high_fraction - high_fraction_target) # wie viel zu hell
+    #     error = err_dark - err_bright
+    #     # Richtung
+    #     if error > eps:
+    #         direction = +1  # heller
+    #     elif error < -eps:
+    #         direction = -1  # dunkler
+    #     else:
+    #         direction = 0
+    #
+    #     if led:
+    #         # Aktuellen Helligkeitswert lesen (unabhängig von GUI)
+    #         if hasattr(led, "sliders") and channel_name in led.sliders:
+    #             current_value = led.sliders[channel_name].get()
+    #         else:
+    #             current_value = led.get_channel_value(channel_name) or 0.0
+    #
+    #         # Schritt-Anpassung:
+    #         # - Vorzeichenwechsel  -> halbieren
+    #         # - Keine Verbesserung -> halbieren
+    #         improved = True
+    #         if self._last_error is not None:
+    #             # "Verbesserung" heißt: |error| kleiner geworden
+    #             improved = (abs(error) < abs(self._last_error)) or (direction == 0)
+    #             if direction != 0 and self.prev_direction != 0 and (direction != self.prev_direction):
+    #                 self.step = max(self.step / 2.0, self.min_step)
+    #             elif not improved:
+    #                 self._stagnation_count += 1
+    #                 if self._stagnation_count >= 2:  # 2 Ticks ohne Verbesserung
+    #                     self.step = max(self.step / 2.0, self.min_step)
+    #                     self._stagnation_count = 0
+    #         self.step_var.set(f"{self.step:.2f} %")
+    #
+    #
+    #         new_value = current_value
+    #
+    #         if low_fraction > low_fraction_target:
+    #             new_value = min(100, current_value + self.step)
+    #         elif high_fraction > high_fraction_target:
+    #             new_value = max(0, current_value - self.step)
+    #
+    #         if new_value != current_value:
+    #             led.set_channel_by_name(channel_name, new_value)
+    #             print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
+    #
+    #
+    #     self.status_label.config(
+    #         text=f"{self.selected_channel.get()} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, step={self.step:.2f}%, dir={direction:+d}"
+    #     )
+    #
+    #     # Wiederholung alle 1 s
+    #     self.after(1000, self.run_auto_led)
     def run_auto_led(self):
         if not self.active.get():
             return
 
         frame = self.master.stream.get_frame()
         if frame is None:
-            self.after(500, self.run_auto_led)
+            self.after(self.loop_ms, self.run_auto_led)
             return
 
         # --- Histogrammkanal wählen ---
         f = np.array(frame)  # HxWx3, dtype=uint8 vom MJPEG-Stream
         sel = self.hist_channel.get()
-
         if sel == "R":
             chan = f[:, :, 0]
         elif sel == "G":
@@ -389,36 +487,28 @@ class AutoLEDDialog(tk.Toplevel):
         elif sel == "B":
             chan = f[:, :, 2]
         else:
-            # Gray: einfacher Mittelwert; alternativ Luma: 0.2126*R + 0.7152*G + 0.0722*B
+            # Gray: einfacher Mittelwert (alternativ Luma-Weighted)
             chan = np.mean(f, axis=2)
 
-        # auf uint8 bringen und flatten
         chan = chan.astype(np.uint8, copy=False).ravel()
-
-        # Histogramm des gewählten Kanals
         hist, _ = np.histogram(chan, bins=256, range=(0, 256))
         total_pixels = max(1, chan.size)
 
-        low_limit = self.params["low_limit"].get()
-        high_limit = self.params["high_limit"].get()
-        low_fraction_target = self.params["low_fraction_target"].get()
-        high_fraction_target = self.params["high_fraction_target"].get()
-        step = self.params["step"].get()
-        eps = 0.002   # 0.2% Toleranz, verhindert Zappeln
+        # Parameter
+        low_limit = int(self.params["low_limit"].get())
+        high_limit = int(self.params["high_limit"].get())
+        low_fraction_target = float(self.params["low_fraction_target"].get())
+        high_fraction_target = float(self.params["high_fraction_target"].get())
+        eps = 0.002  # 0.2 %
 
-        low_count = hist[:low_limit + 1].sum()
-        high_count = hist[255 - high_limit:].sum()
-        low_fraction = low_count / total_pixels
-        high_fraction = high_count / total_pixels
+        low_fraction = hist[:low_limit + 1].sum() / total_pixels
+        high_fraction = hist[255 - high_limit:].sum() / total_pixels
 
-        channel_name = self.selected_channel.get()
-        led = self.master.get_led_controller()
-
-        # Fehlermaß (positiv = zu dunkel; negativ = zu hell; 0 = ok)
-        err_dark = max(0.0, low_fraction  - low_fraction_target)   # wie viel zu dunkel
-        err_bright = max(0.0, high_fraction - high_fraction_target) # wie viel zu hell
+        # Fehlermaß & Richtung (einheitliche Logik)
+        err_dark = max(0.0, low_fraction - low_fraction_target)  # zu dunkel
+        err_bright = max(0.0, high_fraction - high_fraction_target)  # zu hell
         error = err_dark - err_bright
-        # Richtung
+
         if error > eps:
             direction = +1  # heller
         elif error < -eps:
@@ -426,48 +516,67 @@ class AutoLEDDialog(tk.Toplevel):
         else:
             direction = 0
 
-        if led:
-            # Aktuellen Helligkeitswert lesen (unabhängig von GUI)
-            if hasattr(led, "sliders") and channel_name in led.sliders:
-                current_value = led.sliders[channel_name].get()
-            else:
-                current_value = led.get_channel_value(channel_name) or 0.0
+        channel_name = self.selected_channel.get()
+        led = self.master.get_led_controller()
+        if not led or not channel_name:
+            self.after(self.loop_ms, self.run_auto_led)
+            return
 
-            # Schritt-Anpassung:
-            # - Vorzeichenwechsel  -> halbieren
-            # - Keine Verbesserung -> halbieren
-            improved = True
-            if self._last_error is not None:
-                # "Verbesserung" heißt: |error| kleiner geworden
-                improved = (abs(error) < abs(self._last_error)) or (direction == 0)
-                if direction != 0 and self.prev_direction != 0 and (direction != self.prev_direction):
+        # aktuellen Wert lesen (GUI/Headless robust)
+        if hasattr(led, "sliders") and channel_name in getattr(led, "sliders", {}):
+            current_value = float(led.sliders[channel_name].get())
+        else:
+            current_value = float(led.get_channel_value(channel_name) or 0.0)
+
+        # Schritt-Anpassung
+        # 1) Vorzeichenwechsel → Schritt halbieren (nur wenn direction != 0)
+        if (self.prev_direction != 0) and (direction != 0) and (direction != self.prev_direction):
+            self.step = max(self.step / 2.0, self.min_step)
+            # optional: Debug
+            # print(f"[AUTO-LED] sign flip → step={self.step:.3f}%")
+
+        # 2) Keine Verbesserung → nach 2 Zyklen halbieren
+        improved = True
+        if self._last_error is not None:
+            improved = (abs(error) < abs(self._last_error)) or (direction == 0)
+            if not improved:
+                self._stagnation_count += 1
+                if self._stagnation_count >= 2:
                     self.step = max(self.step / 2.0, self.min_step)
-                elif not improved:
-                    self._stagnation_count += 1
-                    if self._stagnation_count >= 2:  # 2 Ticks ohne Verbesserung
-                        self.step = max(self.step / 2.0, self.min_step)
-                        self._stagnation_count = 0
-            self.step_var.set(f"{self.step:.2f} %")
+                    self._stagnation_count = 0
+                    # print(f"[AUTO-LED] stagnation → step={self.step:.3f}%")
+            else:
+                self._stagnation_count = 0
 
+        self.step_var.set(f"{self.step:.2f} %")
 
-            new_value = current_value
-
-            if low_fraction > low_fraction_target:
-                new_value = min(100, current_value + self.step)
-            elif high_fraction > high_fraction_target:
-                new_value = max(0, current_value - self.step)
-
-            if new_value != current_value:
+        # Stellgröße anwenden – ausschließlich gemäß 'direction'
+        new_value = current_value
+        if direction != 0 and self.step > 0.0:
+            new_value = max(0.0, min(100.0, current_value + direction * self.step))
+            if abs(new_value - current_value) >= 1e-3:
                 led.set_channel_by_name(channel_name, new_value)
-                print(f"[AUTO-LED] {channel_name}: {current_value:.1f} → {new_value:.1f}")
 
-
+        # Status
         self.status_label.config(
-            text=f"{self.selected_channel.get()} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, step={self.step:.2f}%, dir={direction:+d}"
+            text=f"{channel_name} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, "
+                 f"step={self.step:.2f}%, dir={direction:+d}"
         )
 
-        # Wiederholung alle 1 s
-        self.after(1000, self.run_auto_led)
+        # Zustände für nächste Iteration MERKEN (wichtig!)
+        self.prev_direction = direction
+        self._last_error = error
+        self._cycle_count += 1
+
+        # Abbruch: Ziele erreicht und Schritt klein genug ODER Sicherheitslimit
+        if (direction == 0 and self.step <= self.min_step) or (self._cycle_count >= self._max_cycles):
+            self.active.set(False)
+            self.toggle_button.config(text="Regelung starten")
+            self.status_label.config(text=f"Fertig: {channel_name} (step={self.step:.2f}%)")
+            return
+
+        # Weiter
+        self.after(self.loop_ms, self.run_auto_led)
 
 
 if __name__ == "__main__":
