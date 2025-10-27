@@ -232,7 +232,7 @@ class AutoLEDDialog(tk.Toplevel):
             "high_limit": tk.IntVar(value=10),
             "low_fraction_target": tk.DoubleVar(value=0.05),
             "high_fraction_target": tk.DoubleVar(value=0.05),
-            "step": tk.DoubleVar(value=2.0)
+            "start_step": tk.DoubleVar(value=20.0),  # <- war "step"
         }
 
         # Zustandsgrößen für adaptiven Regler
@@ -247,8 +247,6 @@ class AutoLEDDialog(tk.Toplevel):
         self._max_cycles = 200  # Sicherheitsabbbruch
         self._cycle_count = 0
 
-        # Anzeige der Schrittgröße
-        self.step_var = tk.StringVar(value=f"{self.step:.2f} %")
 
         self.selected_channel = tk.StringVar(value="")
         self.active = tk.BooleanVar(value=False)
@@ -279,10 +277,13 @@ class AutoLEDDialog(tk.Toplevel):
             ("low_fraction_target", "max. Dunkelanteil"),
             ("high_limit", "Hellgrenze [0–255]"),
             ("high_fraction_target", "max. Hellanteil"),
-            ("step", "Regelschritt [%]"),
+            ("start_step", "Start-Schritt [%]"),  # <- neue Bezeichnung
         ]:
             ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
-            ttk.Entry(self, textvariable=self.params[key]).pack(fill="x", padx=10)
+            entry = ttk.Entry(self, textvariable=self.params[key])
+            entry.pack(fill="x", padx=10)
+            if key == "start_step":
+                self._entry_start_step = entry  # zum Ein/Ausblenden merken
 
         ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
         ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
@@ -346,8 +347,19 @@ class AutoLEDDialog(tk.Toplevel):
             self._stagnation_count = 0
             self._cycle_count = 0
             self.step_var.set(f"{self.step:.2f} %")
-
             self._reset_leds_async(channel_only=False)
+
+            # Start-Schritt aus Feld lesen (Fallback 20.0), clampen
+            try:
+                start = float(self.params["start_step"].get())
+            except Exception:
+                start = 20.0
+            self.step = max(0.05, min(50.0, start))  # Grenzen: 0.05..50 %
+            self.step_var.set(f"{self.step:.2f} %")
+
+            # Feld während der Regelung deaktivieren
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["disabled"])
 
             self.active.set(True)
             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
@@ -360,6 +372,9 @@ class AutoLEDDialog(tk.Toplevel):
             self.active.set(False)
             self.status_label.config(text="Status: inaktiv")
             self.toggle_button.config(text="Regelung starten")
+            # Feld wieder aktivieren
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["!disabled"])
 
     # ------------------------------------------------------------
     # Regelalgorithmus (nur ein Kanal)
