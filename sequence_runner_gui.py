@@ -246,7 +246,17 @@ class AutoLEDDialog(tk.Toplevel):
         self._stagnation_count = 0  # Zyklen ohne Verbesserung
         self._max_cycles = 200  # Sicherheitsabbbruch
         self._cycle_count = 0
+        # Live-Anzeige des PWM-Werts (0..100 %)
+        self.current_pwm = tk.DoubleVar(value=0.0)
 
+        # (optional) kompakter ttk-Style
+        style = ttk.Style(self)
+        try:
+            style.configure("Compact.TLabel", padding=(2, 1))
+            style.configure("Compact.TButton", padding=(4, 2))
+            style.configure("Compact.Horizontal.TProgressbar", thickness=8)
+        except Exception:
+            pass
 
         self.selected_channel = tk.StringVar(value="")
         self.active = tk.BooleanVar(value=False)
@@ -257,44 +267,117 @@ class AutoLEDDialog(tk.Toplevel):
     # ------------------------------------------------------------
     # GUI-Aufbau
     # ------------------------------------------------------------
+    # def _build_ui(self):
+    #     ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+    #     self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
+    #     self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
+    #     # Wahl des Histogrammkanals
+    #     self.hist_channel = tk.StringVar(value="Gray")  # Optionen: Gray, R, G, B
+    #
+    #     ttk.Label(self, text="Histogrammkanal:",
+    #               foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
+    #     ttk.OptionMenu(self, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B").pack(
+    #         fill="x", padx=10, pady=(0, 10)
+    #     )
+    #
+    #     ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
+    #
+    #     for key, label in [
+    #         ("low_limit", "Dunkelgrenze [0–255]"),
+    #         ("low_fraction_target", "max. Dunkelanteil"),
+    #         ("high_limit", "Hellgrenze [0–255]"),
+    #         ("high_fraction_target", "max. Hellanteil"),
+    #         ("start_step", "Start-Schritt [%]"),  # <- neue Bezeichnung
+    #     ]:
+    #         ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
+    #         entry = ttk.Entry(self, textvariable=self.params[key])
+    #         entry.pack(fill="x", padx=10)
+    #         if key == "start_step":
+    #             self._entry_start_step = entry  # zum Ein/Ausblenden merken
+    #
+    #     ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
+    #     ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
+    #
+    #     self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
+    #     self.status_label.pack(fill="x", pady=10)
+    #
+    #     self.toggle_button = ttk.Button(self, text="Regelung starten", command=self.toggle_auto_led)
+    #     self.toggle_button.pack(pady=10)
+    #
+    #     ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
     def _build_ui(self):
-        ttk.Label(self, text="LED-Kanal:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
-        self.channel_menu = ttk.OptionMenu(self, self.selected_channel, "")
-        self.channel_menu.pack(fill="x", padx=10, pady=(0, 10))
-        # Wahl des Histogrammkanals
-        self.hist_channel = tk.StringVar(value="Gray")  # Optionen: Gray, R, G, B
+        root = ttk.Frame(self)
+        root.pack(fill="both", expand=True, padx=8, pady=8)
 
-        ttk.Label(self, text="Histogrammkanal:",
-                  foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(10, 0))
-        ttk.OptionMenu(self, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B").pack(
-            fill="x", padx=10, pady=(0, 10)
-        )
+        # Zeile 0: Kanalwahl + Start/Stop Button kompakt
+        row = 0
+        ttk.Label(root, text="LED-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w")
+        self.channel_menu = ttk.OptionMenu(root, self.selected_channel, "")
+        self.channel_menu.grid(row=row, column=1, sticky="ew", padx=(4, 0))
+        self.toggle_button = ttk.Button(root, text="Regelung starten",
+                                        style="Compact.TButton", command=self.toggle_auto_led)
+        self.toggle_button.grid(row=row, column=2, sticky="ew", padx=(6, 0))
+        root.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text="Parameter:", foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(5, 0))
+        # Zeile 1: Histogrammkanal
+        row += 1
+        ttk.Label(root, text="Hist-Kanal:", style="Compact.TLabel").grid(row=row, column=0, sticky="w", pady=(6, 0))
+        self.hist_channel = tk.StringVar(value="Gray")
+        ttk.OptionMenu(root, self.hist_channel, self.hist_channel.get(), "Gray", "R", "G", "B") \
+            .grid(row=row, column=1, sticky="ew", padx=(4, 0), pady=(6, 0))
 
-        for key, label in [
-            ("low_limit", "Dunkelgrenze [0–255]"),
-            ("low_fraction_target", "max. Dunkelanteil"),
-            ("high_limit", "Hellgrenze [0–255]"),
-            ("high_fraction_target", "max. Hellanteil"),
-            ("start_step", "Start-Schritt [%]"),  # <- neue Bezeichnung
-        ]:
-            ttk.Label(self, text=label, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10, pady=(8, 0))
-            entry = ttk.Entry(self, textvariable=self.params[key])
-            entry.pack(fill="x", padx=10)
-            if key == "start_step":
-                self._entry_start_step = entry  # zum Ein/Ausblenden merken
+        # Zeile 2–: Parameter in kompakter 2-Spalten-Matrix
+        row += 1
+        params = ttk.LabelFrame(root, text="Parameter")
+        params.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        params.columnconfigure(1, weight=1)
 
-        ttk.Label(self, text="Aktuelle Schrittgröße:", foreground="white", background="#2e2e2e").pack(anchor="w",padx=10,pady=(10, 0))
-        ttk.Label(self, textvariable=self.step_var, foreground="white", background="#2e2e2e").pack(anchor="w", padx=10)
+        def add_param(r, label_text, var):
+            ttk.Label(params, text=label_text, style="Compact.TLabel").grid(row=r, column=0, sticky="w", padx=(4, 2),
+                                                                            pady=2)
+            e = ttk.Entry(params, textvariable=var, width=8)
+            e.grid(row=r, column=1, sticky="ew", padx=(0, 4), pady=2)
+            return e
 
-        self.status_label = ttk.Label(self, text="Status: inaktiv", foreground="white", background="#2e2e2e")
-        self.status_label.pack(fill="x", pady=10)
+        r = 0
+        add_param(r, "Dunkelgrenze [0–255]", self.params["low_limit"]);
+        r += 1
+        add_param(r, "max. Dunkelanteil", self.params["low_fraction_target"]);
+        r += 1
+        add_param(r, "Hellgrenze [0–255]", self.params["high_limit"]);
+        r += 1
+        add_param(r, "max. Hellanteil", self.params["high_fraction_target"]);
+        r += 1
+        e_start = add_param(r, "Start-Schritt [%]", self.params["start_step"]);
+        r += 1
+        self._entry_start_step = e_start
 
-        self.toggle_button = ttk.Button(self, text="Regelung starten", command=self.toggle_auto_led)
-        self.toggle_button.pack(pady=10)
+        # Zeile (row+1): Live-Step + PWM-Anzeige
+        row += 1
+        info = ttk.Frame(root)
+        info.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        info.columnconfigure(1, weight=1)
 
-        ttk.Button(self, text="Schließen", command=self.destroy).pack(pady=10)
+        ttk.Label(info, text="Schritt:", style="Compact.TLabel").grid(row=0, column=0, sticky="w")
+        ttk.Label(info, textvariable=self.step_var, style="Compact.TLabel").grid(row=0, column=1, sticky="w")
+
+        # PWM Anzeige (Progressbar + Zahl)
+        ttk.Label(info, text="PWM:", style="Compact.TLabel").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.pwm_bar = ttk.Progressbar(info, style="Compact.Horizontal.TProgressbar",
+                                       orient="horizontal", mode="determinate", maximum=100.0,
+                                       variable=self.current_pwm)
+        self.pwm_bar.grid(row=1, column=1, sticky="ew", pady=(4, 0))
+        self.pwm_label = ttk.Label(info, textvariable=self.current_pwm, style="Compact.TLabel")
+        self.pwm_label.grid(row=1, column=2, sticky="e", padx=(6, 0))
+
+        # Statuszeile + Schließen
+        row += 1
+        self.status_label = ttk.Label(root, text="Status: inaktiv", style="Compact.TLabel")
+        self.status_label.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+
+        row += 1
+        ttk.Button(root, text="Schließen", style="Compact.TButton", command=self.destroy) \
+            .grid(row=row, column=2, sticky="e", pady=(8, 0))
 
     # ------------------------------------------------------------
     # Kanal-Liste aktualisieren
@@ -361,6 +444,18 @@ class AutoLEDDialog(tk.Toplevel):
             if hasattr(self, "_entry_start_step"):
                 self._entry_start_step.state(["disabled"])
 
+            # Start-Schritt aus Feld lesen
+            try:
+                start = float(self.params["start_step"].get())
+            except Exception:
+                start = 20.0
+            self.step = max(0.05, min(50.0, start))
+            self.step_var.set(f"{self.step:.2f} %")
+
+            # Eingabefeld während der Regelung deaktivieren
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["disabled"])
+
             self.active.set(True)
             self.status_label.config(text=f"Regelung aktiv für: {self.selected_channel.get()}")
             self.toggle_button.config(text="Regelung stoppen")
@@ -372,6 +467,10 @@ class AutoLEDDialog(tk.Toplevel):
             self.active.set(False)
             self.status_label.config(text="Status: inaktiv")
             self.toggle_button.config(text="Regelung starten")
+
+            if hasattr(self, "_entry_start_step"):
+                self._entry_start_step.state(["!disabled"])
+
             # Feld wieder aktivieren
             if hasattr(self, "_entry_start_step"):
                 self._entry_start_step.state(["!disabled"])
@@ -439,6 +538,7 @@ class AutoLEDDialog(tk.Toplevel):
             current_value = float(led.sliders[channel_name].get())
         else:
             current_value = float(led.get_channel_value(channel_name) or 0.0)
+        self.current_pwm.set(round(float(current_value), 2))
 
         # Schritt-Anpassung
         # 1) Vorzeichenwechsel → Schritt halbieren (nur wenn direction != 0)
@@ -468,11 +568,13 @@ class AutoLEDDialog(tk.Toplevel):
             new_value = max(0.0, min(100.0, current_value + direction * self.step))
             if abs(new_value - current_value) >= 1e-3:
                 led.set_channel_by_name(channel_name, new_value)
+                if abs(new_value - current_value) >= 1e-3:
+                    led.set_channel_by_name(channel_name, new_value)
+                    self.current_pwm.set(round(float(new_value), 2))
 
         # Status
         self.status_label.config(
-            text=f"{channel_name} [{sel}]: dunkel={low_fraction:.1%}, hell={high_fraction:.1%}, "
-                 f"step={self.step:.2f}%, dir={direction:+d}"
+            text=f"{channel_name} [{sel}]  L:{low_fraction:.1%}  H:{high_fraction:.1%}  step:{self.step:.2f}%"
         )
 
         # Zustände für nächste Iteration MERKEN (wichtig!)
