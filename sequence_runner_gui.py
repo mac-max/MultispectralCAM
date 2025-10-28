@@ -312,10 +312,12 @@ class AutoLEDDialog(tk.Toplevel):
         else:
             # Stop
             self.core.stop()
+            self._reset_leds_async(channel_only=False)
             self.toggle_button.config(text="Regelung starten")
             self.status_label.config(text="Status: inaktiv")
             if hasattr(self, "_entry_start_step"):
                 self._entry_start_step.state(["!disabled"])
+
 
     def _build_ui(self):
 
