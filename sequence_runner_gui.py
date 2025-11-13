@@ -99,35 +99,35 @@ class SequenceRunnerGUI(tk.Tk):
             self._render_histogram(np.array(frame))
 
 
-
-            # Histogramm aktualisieren (RGB + Grau)
-            frame_np = np.array(frame)
-            r = frame_np[:, :, 0].flatten()
-            g = frame_np[:, :, 1].flatten()
-            b = frame_np[:, :, 2].flatten()
-            gray = np.mean(frame_np, axis=2).astype(np.uint8).flatten()
-
-            hist_r, _ = np.histogram(r, bins=256, range=(0, 256))
-            hist_g, _ = np.histogram(g, bins=256, range=(0, 256))
-            hist_b, _ = np.histogram(b, bins=256, range=(0, 256))
-            hist_gray, _ = np.histogram(gray, bins=256, range=(0, 256))
-
-            self.ax.clear()
-            self.ax.set_facecolor("#1e1e1e")
-
-            # Farbverteilungen
-            self.ax.plot(hist_r, color="red", alpha=0.7, label="Rot")
-            self.ax.plot(hist_g, color="lime", alpha=0.7, label="Grün")
-            self.ax.plot(hist_b, color="cyan", alpha=0.7, label="Blau")
-
-            # Grauwertverteilung (weiß)
-            self.ax.plot(hist_gray, color="white", alpha=0.6, linewidth=1.0, label="Grau")
-
-            self.ax.set_xlim([0, 256])
-            self.ax.set_title("Helligkeitsverteilung (RGB)", color="white")
-            self.ax.tick_params(colors="white")
-            self.ax.legend(facecolor="#2e2e2e", edgecolor="#2e2e2e", labelcolor="white", loc="upper right")
-            self.canvas.draw_idle()
+            #
+            # # Histogramm aktualisieren (RGB + Grau)
+            # frame_np = np.array(frame)
+            # r = frame_np[:, :, 0].flatten()
+            # g = frame_np[:, :, 1].flatten()
+            # b = frame_np[:, :, 2].flatten()
+            # gray = np.mean(frame_np, axis=2).astype(np.uint8).flatten()
+            #
+            # hist_r, _ = np.histogram(r, bins=256, range=(0, 256))
+            # hist_g, _ = np.histogram(g, bins=256, range=(0, 256))
+            # hist_b, _ = np.histogram(b, bins=256, range=(0, 256))
+            # hist_gray, _ = np.histogram(gray, bins=256, range=(0, 256))
+            #
+            # self.ax.clear()
+            # self.ax.set_facecolor("#1e1e1e")
+            #
+            # # Farbverteilungen
+            # self.ax.plot(hist_r, color="red", alpha=0.7, label="Rot")
+            # self.ax.plot(hist_g, color="lime", alpha=0.7, label="Grün")
+            # self.ax.plot(hist_b, color="cyan", alpha=0.7, label="Blau")
+            #
+            # # Grauwertverteilung (weiß)
+            # self.ax.plot(hist_gray, color="white", alpha=0.6, linewidth=1.0, label="Grau")
+            #
+            # self.ax.set_xlim([0, 256])
+            # self.ax.set_title("Helligkeitsverteilung (RGB)", color="white")
+            # self.ax.tick_params(colors="white")
+            # self.ax.legend(facecolor="#2e2e2e", edgecolor="#2e2e2e", labelcolor="white", loc="upper right")
+            # self.canvas.draw_idle()
 
         if self.is_live:
             self.after(100, self.update_gui)
