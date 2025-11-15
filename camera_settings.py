@@ -181,7 +181,30 @@ class CameraSettings(tk.Toplevel):
         self.awb_r.set(float(awb[0]));
         self.awb_b.set(float(awb[1]))
 
-    
+    def _save_preset_dialog(self):
+        import tkinter.simpledialog as sd
+        name = sd.askstring("Preset speichern", "Name des Presets:", parent=self)
+        if not name:
+            return
+        data = self._current_settings_dict()
+        try:
+            path = PresetManager.save(name, data)
+            self._refresh_presets()
+            self.preset_select.set(name)
+            messagebox.showinfo("Preset", f"Gespeichert:\n{path}")
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Konnte Preset nicht speichern:\n{e}")
+
+    def _load_preset(self):
+        name = self.preset_select.get()
+        if not name or name == "(Auswählen)":
+            messagebox.showwarning("Hinweis", "Bitte zuerst ein Preset auswählen.")
+            return
+        try:
+            data = PresetManager.load(name)
+            self._apply_settings_dict(data)
+        except Exception as e:
+            messagebox.showerror("Fehler", f"Konnte Preset nicht laden:\n{e}")
 
     # ---------------- UI ----------------
     def _build_ui(self):
