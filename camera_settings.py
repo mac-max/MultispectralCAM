@@ -5,6 +5,49 @@ try:
     from filter_controller import IRFilterController
 except Exception:
     IRFilterController = None
+import json, os, sys, webbrowser
+from pathlib import Path
+
+PRESET_DIR = Path.home() / ".config" / "MultispectralCAM" / "camera_presets"
+PRESET_DIR.mkdir(parents=True, exist_ok=True)
+
+class PresetManager:
+    SCHEMA = 1
+
+    @staticmethod
+    def _path(name: str) -> Path:
+        safe = "".join(c for c in name if c.isalnum() or c in "-_ .").strip()
+        return PRESET_DIR / f"{safe}.json"
+
+    @staticmethod
+    def list_presets() -> list[str]:
+        return sorted(p.stem for p in PRESET_DIR.glob("*.json"))
+
+    @staticmethod
+    def save(name: str, data: dict):
+        data = dict(data)  # copy
+        data["_schema"] = PresetManager.SCHEMA
+        path = PresetManager._path(name)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        return path
+
+    @staticmethod
+    def load(name: str) -> dict:
+        path = PresetManager._path(name)
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        # schema handling could go here if needed
+        return data
+
+    @staticmethod
+    def open_folder():
+        if sys.platform.startswith("win"):
+            os.startfile(PRESET_DIR)  # type: ignore
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(PRESET_DIR)])
+        else:
+            subprocess.run(["xdg-open", str(PRESET_DIR)])
 
 
 class CameraSettings(tk.Toplevel):
@@ -86,6 +129,60 @@ class CameraSettings(tk.Toplevel):
         # GUI
         self._build_ui()
 
+    def _current_settings_dict(self) -> dict:
+        """Alles, was wir reproduzierbar machen wollen, als dict exportieren."""
+        w, h, fps_hint = self._mode_tuple()
+        extra = {
+            "denoise": self.denoise_mode.get(),
+            "sharpness": float(self.sharpness.get()),
+            "contrast": float(self.contrast.get()),
+            "saturation": float(self.saturation.get()),
+            "flicker": self.flicker.get(),
+            "ae": bool(self.ae_enabled.get()),
+            "awb": bool(self.awb_enabled.get()),
+            "awbgains": (float(self.awb_r.get()), float(self.awb_b.get())),
+        }
+        return {
+            "mode_label": self.sel_mode.get(),
+            "width": w, "height": h,
+            "framerate": float(self.fps.get()),
+            "shutter": int(self.shutter_us.get()),
+            "gain": float(self.gain_x.get()),
+            "extra_opts": extra,
+        }
+
+    def _apply_settings_dict(self, s: dict):
+        """Preset → GUI Felder setzen (mit sinnvollen Defaults)."""
+        # Modus (Label bevorzugt; sonst width/height matchen)
+        mode_label = s.get("mode_label")
+        if mode_label and any(lbl == mode_label for *_, lbl in self.modes):
+            self.sel_mode.set(mode_label)
+        else:
+            # versuche anhand width/height
+            sw, sh = s.get("width"), s.get("height")
+            for w, h, f, lbl in self.modes:
+                if w == sw and h == sh:
+                    self.sel_mode.set(lbl);
+                    break
+
+        self.fps.set(float(s.get("framerate", self.fps.get())))
+        self.shutter_us.set(int(s.get("shutter", self.shutter_us.get())))
+        self.gain_x.set(float(s.get("gain", self.gain_x.get())))
+
+        extra = s.get("extra_opts", {})
+        self.denoise_mode.set(extra.get("denoise", self.denoise_mode.get()))
+        self.sharpness.set(float(extra.get("sharpness", self.sharpness.get())))
+        self.contrast.set(float(extra.get("contrast", self.contrast.get())))
+        self.saturation.set(float(extra.get("saturation", self.saturation.get())))
+        self.flicker.set(extra.get("flicker", self.flicker.get()))
+        self.ae_enabled.set(bool(extra.get("ae", self.ae_enabled.get())))
+        self.awb_enabled.set(bool(extra.get("awb", self.awb_enabled.get())))
+        awb = extra.get("awbgains", (self.awb_r.get(), self.awb_b.get()))
+        self.awb_r.set(float(awb[0]));
+        self.awb_b.set(float(awb[1]))
+
+    
+
     # ---------------- UI ----------------
     def _build_ui(self):
         pad = dict(padx=10, pady=6)
@@ -146,6 +243,33 @@ class CameraSettings(tk.Toplevel):
         ttk.Spinbox(frm_awb, from_=0.5, to=8.0, increment=0.05, textvariable=self.awb_b, width=7)\
             .grid(row=0, column=3, sticky="w", padx=(8,0))
 
+        # Presets
+        frm_preset = ttk.LabelFrame(self, text="Presets")
+        frm_preset.grid(row=4, column=0, sticky="ew", padx=10, pady=(2, 6))
+        frm_preset.columnconfigure(1, weight=1)
+
+        self.preset_name = tk.StringVar(value="")
+        self.preset_select = tk.StringVar(value="(Auswählen)")
+
+        def _refresh_presets():
+            items = ["(Auswählen)"] + PresetManager.list_presets()
+            menu = self.cmb_preset["menu"]
+            menu.delete(0, "end")
+            for it in items:
+                menu.add_command(label=it, command=lambda v=it: self.preset_select.set(v))
+
+        ttk.Label(frm_preset, text="Preset:").grid(row=0, column=0, sticky="w")
+        self.cmb_preset = ttk.OptionMenu(frm_preset, self.preset_select, self.preset_select.get(),
+                                         *(["(Auswählen)"] + PresetManager.list_presets()))
+        self.cmb_preset.grid(row=0, column=1, sticky="ew", padx=(6, 6))
+
+        ttk.Button(frm_preset, text="Laden", command=self._load_preset).grid(row=0, column=2, padx=(0, 4))
+        ttk.Button(frm_preset, text="Speichern…", command=self._save_preset_dialog).grid(row=0, column=3, padx=(0, 4))
+        ttk.Button(frm_preset, text="Ordner", command=PresetManager.open_folder).grid(row=0, column=4)
+
+        # lokale Methode verfügbar machen
+        self._refresh_presets = _refresh_presets
+
         # Buttons
         frm_btn = ttk.Frame(self)
         frm_btn.grid(row=4, column=0, sticky="ew", **pad)
@@ -155,6 +279,7 @@ class CameraSettings(tk.Toplevel):
             .grid(row=0, column=1, padx=(0,8))
         ttk.Button(frm_btn, text="Vorschau + Still anwenden", command=lambda: self.apply_settings(preview_only=False))\
             .grid(row=0, column=2)
+
 
     # ---------------- Helpers ----------------
     def _mode_tuple(self):
