@@ -2,7 +2,7 @@ import tkinter as tk
 from tkinter import ttk
 from PIL import Image, ImageTk
 from led_control import LEDController
-# from led_control_widget import LEDControlWidget
+from led_control_widget import LEDControlWidget
 from camera_settings import CameraSettings
 from sensor_monitor import SensorMonitor
 
