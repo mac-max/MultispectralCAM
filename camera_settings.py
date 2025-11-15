@@ -1,5 +1,11 @@
 import tkinter as tk
+import threading
 from tkinter import ttk, messagebox
+try:
+    from filter_controller import IRFilterController
+except Exception:
+    IRFilterController = None
+
 
 class CameraSettings(tk.Toplevel):
     """
@@ -10,6 +16,21 @@ class CameraSettings(tk.Toplevel):
         super().__init__(master)
         self.title("Kameraeinstellungen – RAW/reproduzierbar")
         self.resizable(False, False)
+        # IR-Filter (optional)
+        self.ir_filter = None
+        self.filter_state = tk.StringVar(value="unbekannt")
+        self.filter_ok = False
+        try:
+            if IRFilterController is not None:
+                self.ir_filter = IRFilterController()
+                self.filter_ok = True
+                # Wenn dein Controller einen Status liefern kann, hier setzen:
+                # z.B. self.filter_state.set("IN" if self.ir_filter.is_in() else "OUT")
+                # Falls nicht verfügbar, lassen wir "unbekannt".
+        except Exception as e:
+            print("[CameraSettings] IRFilterController konnte nicht initiiert werden:", e)
+            self.filter_ok = False
+
         self.camera_stream = camera_stream
 
         # --- Presets für Sensor-Modi (OV5647/IMX219 typische Modi; passe bei Bedarf an) ---
@@ -39,6 +60,28 @@ class CameraSettings(tk.Toplevel):
         # AWB-Gains (nur wirksam bei AWB off)
         self.awb_r = tk.DoubleVar(value=2.0)
         self.awb_b = tk.DoubleVar(value=1.5)
+
+        # IR-Filter
+        frm_filter = ttk.LabelFrame(self, text="IR-Filter")
+        frm_filter.grid(row=5, column=0, sticky="ew", padx=10, pady=6)
+        frm_filter.columnconfigure(3, weight=1)
+
+        ttk.Label(frm_filter, text="Status:").grid(row=0, column=0, sticky="w")
+        self.lbl_filter = ttk.Label(frm_filter, textvariable=self.filter_state)
+        self.lbl_filter.grid(row=0, column=1, sticky="w", padx=(6, 12))
+
+        btn_in = ttk.Button(frm_filter, text="Einschwenken", command=self._filter_in)
+        btn_out = ttk.Button(frm_filter, text="Ausschwenken", command=self._filter_out)
+        btn_tgl = ttk.Button(frm_filter, text="Toggle", command=self._filter_toggle)
+        btn_in.grid(row=0, column=2, padx=(0, 6))
+        btn_out.grid(row=0, column=3, padx=(0, 6), sticky="w")
+        btn_tgl.grid(row=0, column=4, padx=(0, 0), sticky="w")
+
+        # Buttons ggf. deaktivieren, wenn kein Controller
+        if not self.filter_ok:
+            for w in (btn_in, btn_out, btn_tgl):
+                w.state(["disabled"])
+            self.filter_state.set("nicht verfügbar")
 
         # GUI
         self._build_ui()
@@ -194,6 +237,39 @@ class CameraSettings(tk.Toplevel):
                                 "Stelle sicher, dass deine capture_*-Routinen extra_opts berücksichtigen.")
 
 
+
+    def _filter_in(self):
+        if not self.ir_filter: return
+
+        def run():
+            try:
+                self.ir_filter.switch_in()
+                self.filter_state.set("IN")
+            except Exception as e:
+                print("[IR-Filter] switch_in failed:", e)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _filter_out(self):
+        if not self.ir_filter: return
+
+        def run():
+            try:
+                self.ir_filter.switch_out()
+                self.filter_state.set("OUT")
+            except Exception as e:
+                print("[IR-Filter] switch_out failed:", e)
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _filter_toggle(self):
+        # Wenn dein Controller keine echte Toggle-Funktion hat: Status heuristisch wechseln
+        if not self.ir_filter: return
+        target = "OUT" if self.filter_state.get().upper() == "IN" else "IN"
+        if target == "IN":
+            self._filter_in()
+        else:
+            self._filter_out()
 
 # import tkinter as tk
 # from tkinter import ttk
