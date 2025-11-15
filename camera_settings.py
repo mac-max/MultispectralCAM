@@ -106,7 +106,7 @@ class CameraSettings(tk.Toplevel):
 
         # IR-Filter
         frm_filter = ttk.LabelFrame(self, text="IR-Filter")
-        frm_filter.grid(row=5, column=0, sticky="ew", padx=10, pady=6)
+        frm_filter.grid(row=7, column=0, sticky="ew", padx=10, pady=6)
         frm_filter.columnconfigure(3, weight=1)
 
         ttk.Label(frm_filter, text="Status:").grid(row=0, column=0, sticky="w")
