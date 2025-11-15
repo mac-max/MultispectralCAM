@@ -274,6 +274,7 @@ class CameraSettings(tk.Toplevel):
         self.preset_name = tk.StringVar(value="")
         self.preset_select = tk.StringVar(value="(Auswählen)")
 
+
         def _refresh_presets():
             items = ["(Auswählen)"] + PresetManager.list_presets()
             menu = self.cmb_preset["menu"]
@@ -295,7 +296,7 @@ class CameraSettings(tk.Toplevel):
 
         # Buttons
         frm_btn = ttk.Frame(self)
-        frm_btn.grid(row=4, column=0, sticky="ew", **pad)
+        frm_btn.grid(row=5, column=0, sticky="ew", **pad)
         ttk.Button(frm_btn, text="RAW-optimiert anwenden", command=self.apply_raw_optimized)\
             .grid(row=0, column=0, padx=(0,8))
         ttk.Button(frm_btn, text="Nur Vorschau anwenden", command=lambda: self.apply_settings(preview_only=True))\
