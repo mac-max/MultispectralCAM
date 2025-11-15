@@ -192,7 +192,7 @@ class CameraSettings(tk.Toplevel):
         if not preview_only:
             messagebox.showinfo("Hinweis", "Einstellungen sind für Vorschau aktiv. "
                                 "Stelle sicher, dass deine capture_*-Routinen extra_opts berücksichtigen.")
-        self.destroy()
+        
 
 
 # import tkinter as tk
