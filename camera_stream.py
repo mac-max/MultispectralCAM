@@ -54,16 +54,33 @@ class CameraStream:
             "--inline",
             "-o", "-"
         ]
-        # self.proc = subprocess.Popen(
-        #     self.build_command(),
-        #     stdout=subprocess.PIPE,
-        #     stderr=subprocess.DEVNULL,  # <<—
-        #     bufsize=10 ** 8
-        # )
-        if self.shutter:
-            cmd += ["--shutter", str(self.shutter)]
-        if self.gain:
-            cmd += ["--gain", str(self.gain)]
+        # fester Shutter/Gain nur wenn AE aus
+        extra = getattr(self, "extra_opts", {})
+        ae = extra.get("ae", False)
+        if not ae:
+            if self.shutter: cmd += ["--shutter", str(self.shutter)]
+            if self.gain:    cmd += ["--gain", str(self.gain)]
+
+        # AWB
+        if not extra.get("awb", False):
+            cmd += ["--awb", "off"]
+            r, b = extra.get("awbgains", (2.0, 1.5))
+            cmd += ["--awbgains", f"{r},{b}"]
+
+        # Denoise / ISP
+        if m := extra.get("denoise"):
+            cmd += ["--denoise", m]
+        if extra.get("sharpness") is not None:
+            cmd += ["--sharpness", str(extra["sharpness"])]
+        if extra.get("contrast") is not None:
+            cmd += ["--contrast", str(extra["contrast"])]
+        if extra.get("saturation") is not None:
+            cmd += ["--saturation", str(extra["saturation"])]
+
+        if f := extra.get("flicker"):
+            cmd += ["--flicker", f]
+
+        cmd += ["-o", "-"]
         return cmd
 
     def start(self):
