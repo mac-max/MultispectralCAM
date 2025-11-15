@@ -35,7 +35,7 @@ class CameraSettings(tk.Toplevel):
 
         # Belichtungszeit
         ttk.Label(frame, text="Belichtungszeit [µs]:").pack(anchor="w")
-        shutter_slider = ttk.Scale(frame, from_=100, to=30000, variable=self.shutter_var, orient="horizontal")
+        shutter_slider = ttk.Scale(frame, from_=10, to=100000, variable=self.shutter_var, orient="horizontal")
         shutter_slider.pack(fill="x", pady=(0, 10))
         ttk.Label(frame, textvariable=self.shutter_var).pack(anchor="e")
 
