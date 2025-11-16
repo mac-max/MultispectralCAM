@@ -18,6 +18,8 @@ class SequenceRunnerGUI(tk.Tk):
         self.geometry("1200x800")
         self.configure(bg="#1e1e1e")
         self.hist_log = tk.BooleanVar(value=True)  # Start mit log
+        self.live_enabled = tk.BooleanVar(value=True)
+        self._live_job = None  # after()-Handle fürs Scheduling
 
         # Zentrale Kamera-Instanz (kein Standalone-GUI)
         self.stream = CameraStream(width=640, height=480, framerate=15, standalone=False)
@@ -78,6 +80,13 @@ class SequenceRunnerGUI(tk.Tk):
 
         ttk.Checkbutton(self.left_frame, text="Histogramm: log",
                         variable=self.hist_log, command=self.update_gui_once).pack(pady=4)
+        # Live an/aus
+        self.btn_live = ttk.Button(self.left_frame, text="Live: AN", command=self.toggle_live)
+        self.btn_live.pack(pady=4, fill="x")
+
+        # Einzelbild aktualisieren (ohne Live zu aktivieren)
+        ttk.Button(self.left_frame, text="Einzelbild aktualisieren", command=self.update_gui_once) \
+            .pack(pady=2, fill="x")
 
     # ------------------------------------------------------------
     # Live-Vorschau
@@ -89,14 +98,81 @@ class SequenceRunnerGUI(tk.Tk):
         if not frame: return
         self._render_histogram(np.array(frame))
 
+    def toggle_live(self):
+        if self.live_enabled.get():
+            self.stop_live()
+        else:
+            self.start_live()
+
+    def start_live(self):
+        if self.live_enabled.get():
+            return
+        self.live_enabled.set(True)
+        self.btn_live.config(text="Live: AN")
+        # Vorschau ggf. „entpausieren“
+        if hasattr(self.stream, "preview_paused"):
+            self.stream.preview_paused = False
+        # Scheduling starten
+        self.update_gui()
+
+    def stop_live(self):
+        if not self.live_enabled.get():
+            return
+        self.live_enabled.set(False)
+        self.btn_live.config(text="Live: AUS")
+        # Scheduling stoppen
+        if getattr(self, "_live_job", None):
+            try:
+                self.after_cancel(self._live_job)
+            except Exception:
+                pass
+            self._live_job = None
+        # Vorschau optional pausieren (entlastet CPU)
+        if hasattr(self.stream, "preview_paused"):
+            self.stream.preview_paused = True
+
+    def update_gui_once(self):
+        """Einmaliges Zeichnen (Frame + Histogramm), ohne Live zu aktivieren."""
+        frame = self.stream.get_frame()
+        if not frame:
+            return
+        imgtk = ImageTk.PhotoImage(image=frame)
+        self.image_label.imgtk = imgtk
+        self.image_label.configure(image=imgtk)
+        # falls du _render_histogram(frame_np) hast:
+        try:
+            self._render_histogram(np.array(frame))
+        except Exception:
+            pass
+
+    def on_close(self):
+        # Live-Scheduling sicher stoppen
+        if getattr(self, "_live_job", None):
+            try:
+                self.after_cancel(self._live_job)
+            except Exception:
+                pass
+            self._live_job = None
+        # Vorschau entpausen, damit stop() clean läuft
+        if hasattr(self.stream, "preview_paused"):
+            self.stream.preview_paused = False
+        self.stream.stop()
+        self.destroy()
+
     def update_gui(self):
+        # Wenn Live aus: nicht neu schedulen
+        if not self.live_enabled.get():
+            return
         frame = self.stream.get_frame()
         if frame:
             imgtk = ImageTk.PhotoImage(image=frame)
             self.image_label.imgtk = imgtk
             self.image_label.configure(image=imgtk)
+            try:
+                self._render_histogram(np.array(frame))
+            except Exception:
+                pass
 
-            self._render_histogram(np.array(frame))
 
         if self.is_live:
             self.after(100, self.update_gui)
