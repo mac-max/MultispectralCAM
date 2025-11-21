@@ -24,6 +24,7 @@ class SequenceRunnerGUI(tk.Tk):
         # Zentrale Kamera-Instanz (kein Standalone-GUI)
         self.stream = CameraStream(width=640, height=480, framerate=15, standalone=False)
         self.is_live = True
+        self.start_live()  # kick off scheduling once
 
         # GUI-Aufbau
         self._create_layout()
@@ -105,15 +106,24 @@ class SequenceRunnerGUI(tk.Tk):
             self.start_live()
 
     def start_live(self):
-        if self.live_enabled.get():
-            return
+        # allow re-entry: always (re)start scheduling
         self.live_enabled.set(True)
         self.btn_live.config(text="Live: AN")
-        # Vorschau ggf. „entpausieren“
         if hasattr(self.stream, "preview_paused"):
             self.stream.preview_paused = False
-        # Scheduling starten
+        # schedule immediately
         self.update_gui()
+
+    # def start_live(self):
+    #     if self.live_enabled.get():
+    #         return
+    #     self.live_enabled.set(True)
+    #     self.btn_live.config(text="Live: AN")
+    #     # Vorschau ggf. „entpausieren“
+    #     if hasattr(self.stream, "preview_paused"):
+    #         self.stream.preview_paused = False
+    #     # Scheduling starten
+    #     self.update_gui()
 
     def stop_live(self):
         if not self.live_enabled.get():
