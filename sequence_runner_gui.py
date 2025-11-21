@@ -142,19 +142,26 @@ class SequenceRunnerGUI(tk.Tk):
         if hasattr(self.stream, "preview_paused"):
             self.stream.preview_paused = True
 
-    def update_gui_once(self):
-        """Einmaliges Zeichnen (Frame + Histogramm), ohne Live zu aktivieren."""
-        frame = self.stream.get_frame()
-        if not frame:
+    def update_gui(self):
+        if not self.live_enabled.get():
             return
-        imgtk = ImageTk.PhotoImage(image=frame)
-        self.image_label.imgtk = imgtk
-        self.image_label.configure(image=imgtk)
-        # falls du _render_histogram(frame_np) hast:
-        try:
-            self._render_histogram(np.array(frame))
-        except Exception:
+
+        frame = self.stream.get_frame()
+        if frame:
+            imgtk = ImageTk.PhotoImage(image=frame)
+            # keep a reference to avoid GC
+            self.image_label.imgtk = imgtk
+            self.image_label.configure(image=imgtk)
+            try:
+                self._render_histogram(np.array(frame))
+            except Exception:
+                pass
+        else:
+            # optional: clear image once on first miss
             pass
+
+        # always schedule the next tick
+        self._live_job = self.after(100, self.update_gui)
 
     def on_close(self):
         # Live-Scheduling sicher stoppen
