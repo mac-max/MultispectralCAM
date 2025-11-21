@@ -142,3 +142,67 @@ class CameraStream:
         if not extra.get("ae", False):
             if self.shutter: cmd += ["--shutter", str(self.shutter)]
             if self.gain:
+                cmd += ["--gain", str(self.gain)]
+
+                # AWB
+            if extra.get("awb", False) is False:
+                cmd += ["--awb", "off"]
+                r, b = extra.get("awbgains", (2.0, 1.5))
+                cmd += ["--awbgains", f"{r},{b}"]
+
+                # Denoise / ISP Optionen
+            if m := extra.get("denoise"):
+                cmd += ["--denoise", m]  # cdn_off|fast|hq
+            if "sharpness" in extra:
+                cmd += ["--sharpness", str(extra["sharpness"])]
+            if "contrast" in extra:
+                cmd += ["--contrast", str(extra["contrast"])]
+            if "saturation" in extra:
+                cmd += ["--saturation", str(extra["saturation"])]
+
+                # Manche libcamera-Versionen kennen --flicker nicht -> vorsichtig behandeln
+            if f := extra.get("flicker"):
+                if f.lower() in ("off", "50hz", "60hz"):
+                    cmd += ["--flicker", f]
+
+                # Wichtig: keine Option anhängen, die libcamera-vid nicht kennt!
+            return cmd
+
+            # ---------------- stream reader ----------------
+            def _read_stream(self):
+                CHUNK = 65536
+                MAX_BUFFER = 8 * 1024 * 1024
+                while self.running and self.proc and self.proc.stdout:
+                    try:
+                        data = self.proc.stdout.read(CHUNK)
+                        if not data:
+                            break
+                        self.buffer += data
+                        # Sicherheit: Puffer nicht unendlich wachsen lassen
+                        if len(self.buffer) > MAX_BUFFER:
+                            last_soi = self.buffer.rfind(b'\xff\xd8')
+                            self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
+
+                        # Komplettes JPEG finden und dekodieren
+                        while True:
+                            start = self.buffer.find(b'\xff\xd8')
+                            end = self.buffer.find(b'\xff\xd9', start + 2)
+                            if start == -1 or end == -1:
+                                break
+                            jpg = self.buffer[start:end + 2]
+                            self.buffer = self.buffer[end + 2:]
+                            if len(jpg) < 1024:
+                                continue
+                            img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+                            if img is None:
+                                continue
+                            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                            if not self.preview_paused:
+                                self.frame = Image.fromarray(img)
+                    except Exception as e:
+                        self.stderr_lines.append(f"[CameraStream error] {e}")
+                        time.sleep(0.05)
+                        continue
+
+            def get_frame(self):
+                return self.frame
