@@ -22,7 +22,7 @@ class SequenceRunnerGUI(tk.Tk):
         self._live_job = None  # after()-Handle fürs Scheduling
 
         # Zentrale Kamera-Instanz (kein Standalone-GUI)
-        self.stream = CameraStream(width=640, height=480, framerate=15, standalone=False)
+        self.stream = CameraStream(width=640, height=480, framerate=15)
         self.is_live = True
         self.start_live()  # kick off scheduling once
 
