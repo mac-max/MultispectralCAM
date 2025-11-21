@@ -1,52 +1,134 @@
-import tkinter as tk
-from tkinter import ttk
-from PIL import Image, ImageTk
-import subprocess
-import threading
-import cv2
+# camera_stream.py
+import subprocess, threading, time, os
+from collections import deque
 import numpy as np
-import tempfile
-
+import cv2
+from PIL import Image
 
 class CameraStream:
     """
-    Liest einen kontinuierlichen Videostream von der Raspberry Pi Kamera
-    über libcamera-vid und stellt aktuelle Frames als PIL-Images bereit.
+    Solider MJPEG-Preview auf Basis libcamera-vid.
+    - robustes Frame-Parsing (mehrere JPEGs pro chunk)
+    - stderr-Ringpuffer für Diagnosen
+    - health_check() gibt Status + letzte Fehlermeldungen zurück
+    - preview_paused wird beim Capture IMMER zurückgesetzt
     """
-
-    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, standalone=True):
+    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, extra_opts=None):
         self.width = width
         self.height = height
         self.framerate = framerate
         self.shutter = shutter
         self.gain = gain
-        self.standalone = standalone
+        self.extra_opts = extra_opts or {}
+
+        self.proc = None
+        self.thread = None
+        self._stderr_thread = None
+        self.proc_lock = threading.Lock()
 
         self.buffer = b""
         self.frame = None
         self.running = False
-        self.proc = None
-        self.thread = None
-
-        self.proc_lock = threading.Lock()
         self.preview_paused = False
+        self.stderr_lines = deque(maxlen=200)
 
         self.start()
 
-        # Nur eigene GUI erzeugen, wenn standalone=True
-        if self.standalone:
-            self._create_preview_window()
+    # ---------------- diagnostics ----------------
+    def last_errors(self, n=20):
+        return "\n".join(list(self.stderr_lines)[-n:])
 
-    # -------------------------------------------------
-    # Stream-Start und Konfiguration
-    # -------------------------------------------------
+    def health_check(self):
+        return {
+            "running": bool(self.running),
+            "preview_paused": bool(self.preview_paused),
+            "proc_exists": self.proc is not None,
+            "proc_returncode": (None if not self.proc else self.proc.poll()),
+            "thread_alive": bool(self.thread and self.thread.is_alive()),
+            "cmd": " ".join(self.build_command()),
+            "stderr_tail": self.last_errors(12),
+        }
+
+    # ---------------- process control ----------------
+    def start(self):
+        with self.proc_lock:
+            if self.running:
+                return
+            self.running = True
+            cmd = self.build_command()
+            # print("[VID] start:", " ".join(cmd))
+            try:
+                self.proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,     # nicht verschlucken!
+                    bufsize=10**8
+                )
+            except FileNotFoundError as e:
+                self.running = False
+                raise RuntimeError("libcamera-vid not found") from e
+
+            # stderr reader
+            def _read_stderr():
+                try:
+                    for line in iter(self.proc.stderr.readline, b""):
+                        txt = line.decode(errors="replace").rstrip()
+                        if not txt:
+                            continue
+                        # harmlose Meldungen optional filtern:
+                        if "Corrupt JPEG data" in txt:
+                            continue
+                        self.stderr_lines.append(txt)
+                        # print("[VID][stderr]", txt)
+                except Exception as ex:
+                    self.stderr_lines.append(f"[stderr reader error] {ex}")
+
+            self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+            self._stderr_thread.start()
+
+            # stdout reader
+            self.thread = threading.Thread(target=self._read_stream, daemon=True)
+            self.thread.start()
+
+    def stop(self):
+        with self.proc_lock:
+            if not self.running:
+                return
+            self.running = False
+            if self.proc:
+                self.proc.terminate()
+                try:
+                    self.proc.wait(timeout=1.5)
+                except subprocess.TimeoutExpired:
+                    self.proc.kill()
+                self.proc = None
+            if self.thread:
+                self.thread.join(timeout=1)
+                self.thread = None
+            if self._stderr_thread:
+                self._stderr_thread.join(timeout=1)
+                self._stderr_thread = None
+
+    def reconfigure(self, **kwargs):
+        self.stop()
+        self.width = kwargs.get("width", self.width)
+        self.height = kwargs.get("height", self.height)
+        self.framerate = kwargs.get("framerate", self.framerate)
+        self.shutter = kwargs.get("shutter", self.shutter)
+        self.gain = kwargs.get("gain", self.gain)
+        self.extra_opts = kwargs.get("extra_opts", self.extra_opts)
+        self.buffer = b""
+        self.frame = None
+        self.start()
+
+    def set_extra_options(self, extra_opts: dict):
+        self.extra_opts = dict(extra_opts or {})
+
+    # ---------------- command ----------------
     def build_command(self):
-        """Erstellt den libcamera-vid-Befehlsaufruf."""
         cmd = [
             "libcamera-vid",
-            "--nopreview",
-            "--denoise", "cdn_off",
-            "-t", "0",
+            "--nopreview", "-t", "0",
             "--width", str(self.width),
             "--height", str(self.height),
             "--framerate", str(self.framerate),
@@ -54,266 +136,9 @@ class CameraStream:
             "--inline",
             "-o", "-"
         ]
-        # fester Shutter/Gain nur wenn AE aus
-        extra = getattr(self, "extra_opts", {})
-        ae = extra.get("ae", False)
-        if not ae:
+        extra = self.extra_opts or {}
+
+        # AE aus -> feste shutter/gain
+        if not extra.get("ae", False):
             if self.shutter: cmd += ["--shutter", str(self.shutter)]
-            if self.gain:    cmd += ["--gain", str(self.gain)]
-
-        # AWB
-        if not extra.get("awb", False):
-            cmd += ["--awb", "off"]
-            r, b = extra.get("awbgains", (2.0, 1.5))
-            cmd += ["--awbgains", f"{r},{b}"]
-
-        # Denoise / ISP
-        if m := extra.get("denoise"):
-            cmd += ["--denoise", m]
-        if extra.get("sharpness") is not None:
-            cmd += ["--sharpness", str(extra["sharpness"])]
-        if extra.get("contrast") is not None:
-            cmd += ["--contrast", str(extra["contrast"])]
-        if extra.get("saturation") is not None:
-            cmd += ["--saturation", str(extra["saturation"])]
-
-        if f := extra.get("flicker"):
-            cmd += ["--flicker", f]
-
-        cmd += ["-o", "-"]
-        return cmd
-
-    def start(self):
-        """Startet den Streaming-Thread."""
-        self.running = True
-        try:
-            self.proc = subprocess.Popen(
-                self.build_command(),
-                stdout=subprocess.PIPE,
-                stderr=subprocess.DEVNULL,
-                bufsize=10**8
-            )
-        except FileNotFoundError:
-            raise RuntimeError("libcamera-vid wurde nicht gefunden. Bitte sicherstellen, dass es installiert ist.")
-
-        self.thread = threading.Thread(target=self._read_stream, daemon=True)
-        self.thread.start()
-
-    def stop(self):
-        """Stoppt Stream und Prozess."""
-        self.running = False
-        if self.proc:
-            self.proc.terminate()
-            self.proc = None
-        if self.thread:
-            self.thread.join(timeout=1)
-            self.thread = None
-
-    def reconfigure(self, **kwargs):
-        """Ändert Kameraeinstellungen (z. B. Auflösung, Gain, Shutter) und startet Stream neu."""
-        self.stop()
-        self.width = kwargs.get("width", self.width)
-        self.height = kwargs.get("height", self.height)
-        self.framerate = kwargs.get("framerate", self.framerate)
-        self.shutter = kwargs.get("shutter", self.shutter)
-        self.gain = kwargs.get("gain", self.gain)
-        self.buffer = b""
-        self.frame = None
-        self.start()
-
-    def capture_sensor_raw(self, filename="capture.dng", width=None, height=None,
-                           shutter=None, gain=None, fmt="dng", return_array=False):
-        """
-        Nimmt ein Sensor-RAW (OV5647, 10-bit Bayer) auf.
-        fmt:
-          - "dng" (empfohlen): schreibt echtes RAW-DNG.
-          - "npy": schreibt DNG und zusätzlich ein .npy-Array (und/oder gibt es zurück).
-          - "jpg"/"png"/"tiff": WARNUNG – das ist demosaiziertes 8/16-bit, kein Sensor-RAW.
-        """
-        import os
-        import subprocess
-        from PIL import Image
-        import numpy as np
-
-        width = width or self.width
-        height = height or self.height
-        shutter = shutter or self.shutter
-        gain = gain or self.gain
-        fmt = (fmt or "dng").lower()
-
-        # Zielpfade & Endungen
-        def ensure_ext(path, wanted_ext):
-            base, ext = os.path.splitext(path)
-            return path if ext.lower() == f".{wanted_ext}" else f"{base}.{wanted_ext}"
-
-        # Stream ggf. pausieren
-        was_running = self.running
-        self.preview_paused = True
-        if was_running:
-            self.stop()
-
-        try:
-            base_cmd = [
-                "libcamera-still",
-                "-n",
-                "--width", str(width),
-                "--height", str(height),
-                "--immediate",
-                "--timeout", "1",
-            ]
-            if shutter:
-                base_cmd += ["--shutter", str(shutter)]
-            if gain:
-                base_cmd += ["--gain", str(gain)]
-
-            out_path = filename
-
-            if fmt == "dng":
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "-o", out_path]
-            elif fmt == "npy":
-                # Wir erzeugen DNG und lesen es in ein Array ein; zusätzlich .npy speichern
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "-o", out_path]
-            elif fmt in ("jpg", "jpeg", "png", "tiff", "bmp"):
-                # Kein echtes Sensor-RAW – demosaiziert/tonemapped von libcamera
-                out_path = ensure_ext(filename, "jpg" if fmt == "jpeg" else fmt)
-                print(f"[WARN] fmt='{fmt}' ist kein Sensor-RAW. Es wird ein demosaiziertes Bild gespeichert.")
-                cmd = base_cmd + ["--encoding", ("jpg" if fmt == "jpeg" else fmt), "-o", out_path]
-            else:
-                print(f"[WARN] Unbekanntes fmt='{fmt}', verwende DNG.")
-                fmt = "dng"
-                out_path = ensure_ext(filename, "dng")
-                cmd = base_cmd + ["--raw", "-o", out_path]
-
-            print("[CAMERA] RAW-Capture:", " ".join(cmd))
-            subprocess.run(cmd, check=True)
-
-            # npy-Export / Rückgabe des Arrays (nur sinnvoll bei DNG)
-            if fmt in ("dng", "npy") and os.path.exists(out_path):
-                try:
-                    img = Image.open(out_path)  # DNG -> 16-bit container, 10-bit effektiv
-                    raw = np.array(img)  # shape (H, W), dtype=uint16
-                    if fmt == "npy":
-                        npy_path = os.path.splitext(out_path)[0] + ".npy"
-                        np.save(npy_path, raw)
-                    if return_array:
-                        return raw
-                except Exception as e:
-                    print(f"[WARN] DNG konnte nicht als Array gelesen werden: {e}")
-                    if return_array:
-                        return None
-
-            return out_path
-
-        finally:
-            if was_running:
-                self.start()
-            self.preview_paused = False
-
-    # -------------------------------------------------
-    # Stream-Thread
-    # -------------------------------------------------
-    # def _read_stream(self):
-    #     """Liest kontinuierlich MJPEG-Daten und dekodiert sie zu PIL-Images."""
-    #     while self.running:
-    #         try:
-    #             data = self.proc.stdout.read(4096)
-    #             if not data:
-    #                 break
-    #             self.buffer += data
-    #
-    #             start = self.buffer.find(b'\xff\xd8')
-    #             end = self.buffer.find(b'\xff\xd9')
-    #
-    #             if start != -1 and end != -1 and end > start:
-    #                 jpg = self.buffer[start:end + 2]
-    #                 self.buffer = self.buffer[end + 2:]
-    #                 img = cv2.imdecode(np.frombuffer(jpg, dtype=np.uint8), cv2.IMREAD_COLOR)
-    #                 if img is not None:
-    #                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    #                     self.frame = Image.fromarray(img)
-    #         except Exception as e:
-    #             print("Fehler im Kamera-Thread:", e)
-    def _read_stream(self):
-        CHUNK = 65536
-        MAX_BUFFER = 8 * 1024 * 1024
-        while self.running and self.proc and self.proc.stdout:
-            try:
-                data = self.proc.stdout.read(CHUNK)
-                if not data:
-                    break
-                self.buffer += data
-
-                if len(self.buffer) > MAX_BUFFER:
-                    last_soi = self.buffer.rfind(b'\xff\xd8')
-                    self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
-
-                # alle kompletten Frames im Buffer verarbeiten
-                while True:
-                    start = self.buffer.find(b'\xff\xd8')
-                    if start == -1:
-                        # kein SOI im Buffer
-                        self.buffer = self.buffer[-2:]  # Rest klein halten
-                        break
-                    end = self.buffer.find(b'\xff\xd9', start + 2)
-                    if end == -1:
-                        # Frame noch unvollständig
-                        # kleinen Tail behalten, Rest vor SOI wegwerfen
-                        self.buffer = self.buffer[start:]
-                        break
-
-                    jpg = self.buffer[start:end + 2]
-                    self.buffer = self.buffer[end + 2:]
-
-                    if len(jpg) < 2048:
-                        continue
-
-                    arr = np.frombuffer(jpg, dtype=np.uint8)
-                    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
-                    if img is None:
-                        continue
-                    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    if not self.preview_paused:
-                        self.frame = Image.fromarray(img)
-            except Exception as e:
-                print("Fehler im Kamera-Thread:", e)
-                import time;
-                time.sleep(0.01)
-
-    # -------------------------------------------------
-    # Frame-Zugriff
-    # -------------------------------------------------
-    def get_frame(self):
-        """Gibt das zuletzt empfangene PIL.Image-Frame zurück."""
-        if self.preview_paused:
-            return None
-        return self.frame
-
-    # -------------------------------------------------
-    # Eigenes Vorschaufenster (nur im Standalone-Modus)
-    # -------------------------------------------------
-    def _create_preview_window(self):
-        root = tk.Tk()
-        root.title("Kamera-Vorschau")
-        label = ttk.Label(root)
-        label.pack(padx=10, pady=10)
-
-        def update():
-            frame = self.get_frame()
-            if frame:
-                imgtk = ImageTk.PhotoImage(image=frame)
-                label.imgtk = imgtk
-                label.configure(image=imgtk)
-            root.after(50, update)
-
-        ttk.Button(root, text="Beenden", command=lambda: (self.stop(), root.destroy())).pack(pady=10)
-        update()
-        root.mainloop()
-
-
-# -------------------------------------------------
-# Standalone-Test
-# -------------------------------------------------
-if __name__ == "__main__":
-    stream = CameraStream(standalone=True)
+            if self.gain:
