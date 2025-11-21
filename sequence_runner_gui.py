@@ -74,9 +74,9 @@ class SequenceRunnerGUI(tk.Tk):
             ("Einzelaufnahme (JPEG)", self.capture_jpeg),
             ("Einzelaufnahme (RAW)", self.capture_raw),
             ("Auto-LED starten", self.open_auto_led_dialog),
-            ("Live: AN", self.toggle_live(),
+            ("Live: AN", self.toggle_live),
             ("Beenden", self.on_close),
-        ]
+            ]
         for text, cmd in buttons:
             ttk.Button(self.left_frame, text=text, command=cmd).pack(fill=tk.X, pady=5, padx=5)
 
