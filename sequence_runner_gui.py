@@ -74,6 +74,7 @@ class SequenceRunnerGUI(tk.Tk):
             ("Einzelaufnahme (JPEG)", self.capture_jpeg),
             ("Einzelaufnahme (RAW)", self.capture_raw),
             ("Auto-LED starten", self.open_auto_led_dialog),
+            ("Live: AN", self.toggle_live(),
             ("Beenden", self.on_close),
         ]
         for text, cmd in buttons:
@@ -81,13 +82,13 @@ class SequenceRunnerGUI(tk.Tk):
 
         ttk.Checkbutton(self.left_frame, text="Histogramm: log",
                         variable=self.hist_log, command=self.update_gui_once).pack(pady=4)
-        # Live an/aus
-        self.btn_live = ttk.Button(self.left_frame, text="Live: AN", command=self.toggle_live)
-        self.btn_live.pack(pady=4, fill="x")
-
-        # Einzelbild aktualisieren (ohne Live zu aktivieren)
-        ttk.Button(self.left_frame, text="Einzelbild aktualisieren", command=self.update_gui_once) \
-            .pack(pady=2, fill="x")
+        # # Live an/aus
+        # self.btn_live = ttk.Button(self.left_frame, text="Live: AN", command=self.toggle_live)
+        # self.btn_live.pack(pady=4, fill="x")
+        #
+        # # Einzelbild aktualisieren (ohne Live zu aktivieren)
+        # ttk.Button(self.left_frame, text="Einzelbild aktualisieren", command=self.update_gui_once) \
+        #     .pack(pady=2, fill="x")
 
     # ------------------------------------------------------------
     # Live-Vorschau
