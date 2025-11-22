@@ -1,4 +1,5 @@
 # camera_stream.py
+import os
 import subprocess, threading, time
 from collections import deque
 import numpy as np
@@ -11,6 +12,7 @@ class CameraStream:
     - robustes Frame-Parsing
     - stderr-Ringpuffer für Diagnosen
     - health_check() zeigt Prozesszustand + letzte Fehlermeldungen
+    - Still-Captures (JPEG/PNG/TIFF/BMP) + echtes RAW (DNG)
     """
     def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, extra_opts=None):
         self.width = width
@@ -74,7 +76,6 @@ class CameraStream:
                         if not txt:
                             continue
                         if "Corrupt JPEG data" in txt:
-                            # harmlose Warnung filtern
                             continue
                         self.stderr_lines.append(txt)
                 except Exception as ex:
@@ -197,3 +198,148 @@ class CameraStream:
 
     def get_frame(self):
         return self.frame
+
+    # ---------- Still capture helpers ----------
+    def _run_capture(self, cmd, timeout=10):
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        if res.returncode != 0:
+            msg = [
+                "[STILL] failed",
+                "cmd: " + " ".join(cmd),
+                "stderr:",
+                (res.stderr or "").strip(),
+                "— last preview stderr —",
+                self.last_errors(20)
+            ]
+            raise RuntimeError("\n".join(msg))
+        if res.stderr:
+            self.stderr_lines.append("[still] " + res.stderr.strip())
+
+    def _apply_extra_to_still(self, base_cmd: list, extra: dict):
+        # AWB/awbgains
+        if extra.get("awb", False) is False:
+            base_cmd += ["--awb", "off"]
+            r, b = extra.get("awbgains", (2.0, 1.5))
+            base_cmd += ["--awbgains", f"{r},{b}"]
+        # Denoise/ISP
+        if extra.get("denoise"):       base_cmd += ["--denoise", extra["denoise"]]
+        if "sharpness"  in extra:      base_cmd += ["--sharpness",  str(extra["sharpness"])]
+        if "contrast"   in extra:      base_cmd += ["--contrast",   str(extra["contrast"])]
+        if "saturation" in extra:      base_cmd += ["--saturation", str(extra["saturation"])]
+        # Flicker (nur wenn vorhanden)
+        f = extra.get("flicker")
+        if f and str(f).lower() in ("off", "50hz", "60hz"):
+            base_cmd += ["--flicker", f]
+        return base_cmd
+
+    def capture_still(self, filename="capture.jpg", fmt="jpg", width=None, height=None, shutter=None, gain=None):
+        """
+        Speichert ein 'entwickeltes' Bild (jpg/png/tiff/bmp) über libcamera-still.
+        Berücksichtigt extra_opts (AWB off, awbgains, denoise,...).
+        """
+        fmt = (fmt or "jpg").lower()
+        enc = "jpg" if fmt == "jpeg" else fmt
+        if enc not in ("jpg", "png", "tiff", "bmp"):
+            raise ValueError(f"Unsupported format: {fmt}")
+
+        # Pfad vorbereiten
+        filename = os.path.expanduser(filename)
+        base, ext = os.path.splitext(filename)
+        if ext.lower() != f".{enc}":
+            filename = base + f".{enc}"
+        os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
+
+        w  = width   or self.width
+        h  = height  or self.height
+        sh = shutter if shutter is not None else (None if (self.extra_opts.get("ae", False)) else self.shutter)
+        gn = gain    if gain    is not None else (None if (self.extra_opts.get("ae", False)) else self.gain)
+
+        base_cmd = [
+            "libcamera-still",
+            "-n",
+            "--immediate",
+            "--timeout", "1",
+            "--width", str(w),
+            "--height", str(h),
+            "--encoding", enc,
+        ]
+        if sh: base_cmd += ["--shutter", str(sh)]
+        if gn: base_cmd += ["--gain", str(gn)]
+        base_cmd = self._apply_extra_to_still(base_cmd, self.extra_opts)
+        base_cmd += ["-o", filename]
+
+        # Vorschau pausieren
+        was_running = self.running
+        self.preview_paused = True
+        if was_running:
+            self.stop()
+        try:
+            self._run_capture(base_cmd, timeout=15)
+            return filename
+        finally:
+            if was_running:
+                self.start()
+            self.preview_paused = False
+
+    def capture_raw_dng(self, filename="capture.dng", width=None, height=None, shutter=None, gain=None, both=False):
+        """
+        Echten Sensor-RAW (DNG) aufnehmen.
+        - both=False: nur DNG
+        - both=True : JPEG + DNG (DNG neben JPEG-Basename)
+        """
+        filename = os.path.expanduser(filename)
+        base, ext = os.path.splitext(filename)
+        w  = width   or self.width
+        h  = height  or self.height
+        sh = shutter if shutter is not None else (None if (self.extra_opts.get("ae", False)) else self.shutter)
+        gn = gain    if gain    is not None else (None if (self.extra_opts.get("ae", False)) else self.gain)
+
+        base_cmd = [
+            "libcamera-still",
+            "-n",
+            "--immediate",
+            "--timeout", "1",
+            "--width", str(w),
+            "--height", str(h),
+        ]
+        if sh: base_cmd += ["--shutter", str(sh)]
+        if gn: base_cmd += ["--gain", str(gn)]
+        base_cmd = self._apply_extra_to_still(base_cmd, self.extra_opts)
+
+        # Vorschau pausieren
+        was_running = self.running
+        self.preview_paused = True
+        if was_running:
+            self.stop()
+        try:
+            if both:
+                # JPEG + DNG: -r + JPEG-Pfad
+                jpg_path = base + ".jpg" if ext.lower() != ".jpg" else filename
+                os.makedirs(os.path.dirname(jpg_path) or ".", exist_ok=True)
+                cmd = base_cmd + ["-r", "-o", jpg_path]
+                self._run_capture(cmd, timeout=20)
+                dng_path = os.path.splitext(jpg_path)[0] + ".dng"
+                return jpg_path, dng_path
+            else:
+                # Nur DNG
+                dng_path = base + ".dng" if ext.lower() != ".dng" else filename
+                os.makedirs(os.path.dirname(dng_path) or ".", exist_ok=True)
+                cmd = base_cmd + ["--raw", "-o", dng_path]
+                try:
+                    self._run_capture(cmd, timeout=20)
+                except RuntimeError:
+                    # Fallback für ältere Builds: -r benötigt "Haupt"-Output → temporäres JPEG
+                    jpg_tmp = base + ".tmp.jpg"
+                    cmd_fb = base_cmd + ["-r", "-o", jpg_tmp]
+                    self._run_capture(cmd_fb, timeout=20)
+                    # DNG wird parallel geschrieben, Pfad vom Basename
+                    dng_path = os.path.splitext(jpg_tmp)[0] + ".dng"
+                    try:
+                        os.remove(jpg_tmp)
+                    except Exception:
+                        pass
+                return dng_path
+        finally:
+            if was_running:
+                self.start()
+            self.preview_paused = False
