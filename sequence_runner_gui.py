@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from camera_stream import CameraStream
-
+from auto_led_dialog import AutoLEDDialog
 
 class SequenceRunnerGUI(tk.Tk):
     def __init__(self):
