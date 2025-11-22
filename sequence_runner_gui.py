@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 from camera_stream import CameraStream
-from auto_led_dialog import AutoLEDDialog
+
 
 class SequenceRunnerGUI(tk.Tk):
     def __init__(self):
@@ -30,15 +30,13 @@ class SequenceRunnerGUI(tk.Tk):
         self.image_label = ttk.Label(self.main)
         self.image_label.pack(fill="both", expand=True)
 
-        # Histogramm über pyplot
+        # Histogramm (pyplot)
         self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
         self.fig.patch.set_facecolor("#1e1e1e")
         self.ax.set_facecolor("#1e1e1e")
         self.ax.tick_params(colors="white")
-        self.ax.spines["bottom"].set_color("white")
-        self.ax.spines["left"].set_color("white")
-        self.ax.spines["top"].set_color("#444444")
-        self.ax.spines["right"].set_color("#444444")
+        for spine in self.ax.spines.values():
+            spine.set_color("#888888")
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
         self.canvas.get_tk_widget().pack(fill="x")
@@ -46,24 +44,24 @@ class SequenceRunnerGUI(tk.Tk):
         # ---- Controls (links) ----
         ttk.Label(self.left, text="Funktionen").pack(pady=(0, 6), fill="x")
 
-        ttk.Button(self.left, text="Kameraeinstellungen", command=self.open_camera_settings)\
-            .pack(pady=2, fill="x")
-        ttk.Button(self.left, text="LED Steuerung", command=self.open_led_controller)\
-            .pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Sensorsignal", command=self.open_sensor_monitor)\
-            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Kameraeinstellungen",
+                   command=self.open_camera_settings).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="LED Steuerung",
+                   command=self.open_led_controller).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Sensorsignal",
+                   command=self.open_sensor_monitor).pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Einzelaufnahme (JPEG)", command=self.capture_jpeg)\
-            .pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Einzelaufnahme (RAW)", command=self.capture_raw)\
-            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (JPEG)",
+                   command=self.capture_jpeg).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (RAW)",
+                   command=self.capture_raw).pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Auto-LED starten", command=self.start_auto_led)\
-            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Auto-LED starten",
+                   command=self.start_auto_led).pack(pady=2, fill="x")
 
         self.hist_log = tk.BooleanVar(value=True)
         ttk.Checkbutton(
@@ -178,7 +176,6 @@ class SequenceRunnerGUI(tk.Tk):
                                  f"Fehler bei DNG:\n{e}")
 
     def start_auto_led(self):
-        # GUI-Dialog bevorzugen
         try:
             from auto_led_dialog import AutoLEDDialog
             AutoLEDDialog(self)
@@ -186,7 +183,6 @@ class SequenceRunnerGUI(tk.Tk):
         except Exception:
             pass
 
-        # Fallback: Headless-Core
         try:
             from auto_led_core import AutoLEDCore
         except Exception as e:
