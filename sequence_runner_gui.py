@@ -1,65 +1,96 @@
 # sequence_runner.py
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+
 from PIL import ImageTk
 import numpy as np
 
-from matplotlib.figure import Figure
+import matplotlib
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.pyplot as plt
 
 from camera_stream import CameraStream
+
 
 class SequenceRunnerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Multispektral – Vorschau")
-        self.geometry("1060x660")
+        self.title("Multispektral – Vorschau & Steuerung")
+        self.geometry("1100x680")
+
+        # --- Dark Theme / gedeckte Grautöne ---
+        self.configure(bg="#2b2b2b")
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+        style.configure("TFrame", background="#2b2b2b")
+        style.configure("TLabel", background="#2b2b2b", foreground="white")
+        style.configure("TButton", padding=4)
+        style.configure("TCheckbutton", background="#2b2b2b", foreground="white")
 
         # ---- Layout
         self.left = ttk.Frame(self)
         self.left.pack(side="left", fill="y", padx=8, pady=8)
 
         self.main = ttk.Frame(self)
-        self.main.pack(side="left", fill="both", expand=True, padx=(0,8), pady=8)
+        self.main.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
 
         # Bildanzeige
-        self.image_label = ttk.Label(self.main)
+        self.image_label = ttk.Label(self.main, style="TLabel")
         self.image_label.pack(fill="both", expand=True)
 
-        # Histogramm
-        self.fig = Figure(figsize=(5.5, 2.4), dpi=100)
-        self.ax = self.fig.add_subplot(111)
+        # Histogramm mit pyplot
+        self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
+        self.fig.patch.set_facecolor("#2b2b2b")
         self.ax.set_facecolor("#1e1e1e")
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
         self.canvas.get_tk_widget().pack(fill="x")
 
         # ---- Controls (links)
-        ttk.Label(self.left, text="Funktionen").pack(pady=(0,6), fill="x")
+        ttk.Label(self.left, text="Funktionen", style="TLabel").pack(
+            pady=(0, 6), fill="x"
+        )
 
-        ttk.Button(self.left, text="Kameraeinstellungen", command=self.open_camera_settings).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="LED Steuerung", command=self.open_led_controller).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Sensorsignal", command=self.open_sensor_monitor).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Kameraeinstellungen",
+                   command=self.open_camera_settings).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="LED Steuerung",
+                   command=self.open_led_controller).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Sensorsignal",
+                   command=self.open_sensor_monitor).pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Einzelaufnahme (JPEG)", command=self.capture_jpeg).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Einzelaufnahme (RAW)", command=self.capture_raw).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (JPEG)",
+                   command=self.capture_jpeg).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (RAW)",
+                   command=self.capture_raw).pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Auto-LED starten", command=self.start_auto_led).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Auto-LED starten",
+                   command=self.start_auto_led).pack(pady=2, fill="x")
 
         self.hist_log = tk.BooleanVar(value=True)
-        ttk.Checkbutton(self.left, text="Histogramm: log", variable=self.hist_log,
-                        command=self.update_gui_once).pack(pady=6, fill="x")
+        ttk.Checkbutton(
+            self.left,
+            text="Histogramm: log",
+            variable=self.hist_log,
+            command=self.update_gui_once
+        ).pack(pady=6, fill="x")
 
         self.live_enabled = tk.BooleanVar(value=False)
         self._live_job = None
-        self.btn_live = ttk.Button(self.left, text="Live: AN", command=self.toggle_live)
+        self.btn_live = ttk.Button(self.left, text="Live: AN",
+                                   command=self.toggle_live)
         self.btn_live.pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
-        ttk.Button(self.left, text="Beenden", command=self.on_close).pack(pady=2, fill="x")
+
+        ttk.Button(self.left, text="Beenden", command=self.on_close).pack(
+            pady=2, fill="x"
+        )
 
         # ---- Stream starten
         self.stream = CameraStream(width=640, height=480, framerate=15)
@@ -68,6 +99,7 @@ class SequenceRunnerGUI(tk.Tk):
         self.protocol("WM_DELETE_WINDOW", self.on_close)
 
     # ---------- LED Controller Access ----------
+
     def get_led_controller(self, force_gui: bool = False):
         led = getattr(self, "led_window", None)
         try:
@@ -76,27 +108,33 @@ class SequenceRunnerGUI(tk.Tk):
             messagebox.showerror("LED", f"LED-Controller nicht verfügbar:\n{e}")
             return None
 
-        # vorhanden?
+        # vorhandene Instanz wiederverwenden
         if led and hasattr(led, "get_all_channels"):
-            # GUI forcen?
+            # bei Bedarf GUI forcieren
             if force_gui and not getattr(led, "use_gui", False):
                 self.led_window = LEDController(use_gui=True, master=self)
             return self.led_window
 
         # neu anlegen
         try:
-            self.led_window = LEDController(use_gui=bool(force_gui), master=self if force_gui else None)
+            self.led_window = LEDController(
+                use_gui=bool(force_gui),
+                master=self if force_gui else None
+            )
             return self.led_window
         except Exception as e:
-            messagebox.showerror("LED", f"LED-Controller konnte nicht gestartet werden:\n{e}")
+            messagebox.showerror("LED",
+                                 f"LED-Controller konnte nicht gestartet werden:\n{e}")
             return None
 
-    # ---------- Buttons ----------
+    # ---------- Button-Actions ----------
+
     def open_camera_settings(self):
         try:
             from camera_settings import CameraSettings
         except Exception as e:
-            messagebox.showerror("Kameraeinstellungen", f"Modul camera_settings nicht verfügbar:\n{e}")
+            messagebox.showerror("Kameraeinstellungen",
+                                 f"Modul camera_settings nicht verfügbar:\n{e}")
             return
         CameraSettings(self, self.stream)
 
@@ -104,7 +142,6 @@ class SequenceRunnerGUI(tk.Tk):
         led = self.get_led_controller(force_gui=True)
         if not led:
             return
-        # Falls dein LEDController ein Fensterobjekt hält, ggf. anheben:
         try:
             if hasattr(led, "window") and led.window:
                 led.window.lift()
@@ -115,7 +152,8 @@ class SequenceRunnerGUI(tk.Tk):
         try:
             from sensor_monitor import SensorMonitor
         except Exception as e:
-            messagebox.showerror("Sensorsignal", f"Modul sensor_monitor nicht verfügbar:\n{e}")
+            messagebox.showerror("Sensorsignal",
+                                 f"Modul sensor_monitor nicht verfügbar:\n{e}")
             return
         SensorMonitor(self)
 
@@ -123,7 +161,12 @@ class SequenceRunnerGUI(tk.Tk):
         path = filedialog.asksaveasfilename(
             title="Speichern als JPEG",
             defaultextension=".jpg",
-            filetypes=[("JPEG", "*.jpg;*.jpeg"), ("PNG", "*.png"), ("TIFF", "*.tiff"), ("BMP", "*.bmp")]
+            filetypes=[
+                ("JPEG", "*.jpg;*.jpeg"),
+                ("PNG", "*.png"),
+                ("TIFF", "*.tiff;*.tif"),
+                ("BMP", "*.bmp"),
+            ],
         )
         if not path:
             return
@@ -131,36 +174,42 @@ class SequenceRunnerGUI(tk.Tk):
             ext = path.split(".")[-1].lower()
             fmt = "jpg" if ext in ("jpg", "jpeg") else ext
             out = self.stream.capture_still(path, fmt=fmt)
-            messagebox.showinfo("Einzelaufnahme", f"Gespeichert:\n{out}")
+            messagebox.showinfo("Einzelaufnahme",
+                                f"Gespeichert:\n{out}")
         except Exception as e:
-            messagebox.showerror("Einzelaufnahme", f"Fehler bei JPEG/PNG/TIFF/BMP:\n{e}")
+            messagebox.showerror("Einzelaufnahme",
+                                 f"Fehler bei JPEG/PNG/TIFF/BMP:\n{e}")
 
     def capture_raw(self):
         path = filedialog.asksaveasfilename(
             title="Speichern als DNG",
             defaultextension=".dng",
-            filetypes=[("DNG (RAW)", "*.dng")]
+            filetypes=[("DNG (RAW)", "*.dng")],
         )
         if not path:
             return
         try:
             out = self.stream.capture_raw_dng(path, both=False)
-            messagebox.showinfo("RAW-Aufnahme", f"DNG gespeichert:\n{out}")
+            messagebox.showinfo("RAW-Aufnahme",
+                                f"DNG gespeichert:\n{out}")
         except Exception as e:
-            messagebox.showerror("RAW-Aufnahme", f"Fehler bei DNG:\n{e}")
+            messagebox.showerror("RAW-Aufnahme",
+                                 f"Fehler bei DNG:\n{e}")
 
     def start_auto_led(self):
-        # Bevorzugt GUI-Dialog, sonst headless Core
+        # bevorzugt den Dialog, sonst headless Core
         try:
             from auto_led_dialog import AutoLEDDialog
             AutoLEDDialog(self)
             return
         except Exception:
             pass
+
         try:
             from auto_led_core import AutoLEDCore
         except Exception as e:
-            messagebox.showerror("Auto-LED", f"Weder Dialog noch Core verfügbar:\n{e}")
+            messagebox.showerror("Auto-LED",
+                                 f"Weder Dialog noch Core verfügbar:\n{e}")
             return
 
         led = self.get_led_controller(force_gui=False)
@@ -168,20 +217,34 @@ class SequenceRunnerGUI(tk.Tk):
             return
         channels = led.get_all_channels()
         if not channels:
-            messagebox.showwarning("Auto-LED", "Keine LED-Kanäle gefunden.")
+            messagebox.showwarning("Auto-LED",
+                                   "Keine LED-Kanäle gefunden.")
             return
 
-        # Headless starten (erstes Channel als Default)
         def on_update(st):
-            # optional: in Titel anzeigen
-            self.title(f"Auto-LED {st['channel']}  PWM {st['pwm']:.1f}%  step {st['step']:.2f}%")
+            self.title(
+                f"Multispektral – Auto-LED {st['channel']}  "
+                f"PWM {st['pwm']:.1f}%  step {st['step']:.2f}%"
+            )
 
         self.auto_led_core = AutoLEDCore(self, on_update=on_update)
-        params = dict(low_limit=10, high_limit=10, low_fraction_target=0.05, high_fraction_target=0.05)
-        self.auto_led_core.start(channels[0], hist_channel="Gray", params=params, start_step=20.0)
-        messagebox.showinfo("Auto-LED", f"Headless-Regelung gestartet für: {channels[0]}")
+        params = dict(
+            low_limit=10,
+            high_limit=10,
+            low_fraction_target=0.05,
+            high_fraction_target=0.05,
+        )
+        self.auto_led_core.start(
+            channels[0],
+            hist_channel="Gray",
+            params=params,
+            start_step=20.0,
+        )
+        messagebox.showinfo("Auto-LED",
+                            f"Headless-Regelung gestartet für: {channels[0]}")
 
     # ---------- Live handling ----------
+
     def toggle_live(self):
         if self.live_enabled.get():
             self.stop_live()
@@ -208,9 +271,11 @@ class SequenceRunnerGUI(tk.Tk):
             self.stream.preview_paused = True
 
     # ---------- Render ----------
+
     def update_gui(self):
         if not self.live_enabled.get():
             return
+
         frame = self.stream.get_frame()
         if frame:
             imgtk = ImageTk.PhotoImage(image=frame)
@@ -220,6 +285,7 @@ class SequenceRunnerGUI(tk.Tk):
                 self._render_histogram(np.array(frame))
             except Exception:
                 pass
+
         self._live_job = self.after(100, self.update_gui)
 
     def update_gui_once(self):
@@ -259,13 +325,27 @@ class SequenceRunnerGUI(tk.Tk):
         self.ax.plot(hist_r, label="R", color="red",  alpha=0.7)
         self.ax.plot(hist_g, label="G", color="lime", alpha=0.7)
         self.ax.plot(hist_b, label="B", color="cyan", alpha=0.7)
-        self.ax.plot(hist_y, label="Gray", color="white", alpha=0.8, linewidth=1.1)
+        self.ax.plot(hist_y, label="Gray", color="white",
+                     alpha=0.8, linewidth=1.1)
+
         self.ax.set_xlim(0, 256)
         self.ax.tick_params(colors="white")
-        self.ax.legend(facecolor="#2e2e2e", edgecolor="#2e2e2e", labelcolor="white", loc="upper right")
+        for spine in self.ax.spines.values():
+            spine.set_color("#aaaaaa")
+
+        leg = self.ax.legend(
+            facecolor="#2e2e2e",
+            edgecolor="#2e2e2e",
+            labelcolor="white",
+            loc="upper right"
+        )
+        for text in leg.get_texts():
+            text.set_color("white")
+
         self.canvas.draw_idle()
 
     # ---------- Close ----------
+
     def on_close(self):
         if getattr(self, "_live_job", None):
             try:
@@ -279,6 +359,7 @@ class SequenceRunnerGUI(tk.Tk):
             self.stream.stop()
         finally:
             self.destroy()
+
 
 if __name__ == "__main__":
     app = SequenceRunnerGUI()

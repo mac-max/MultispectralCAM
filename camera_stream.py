@@ -6,15 +6,17 @@ import numpy as np
 import cv2
 from PIL import Image
 
+
 class CameraStream:
     """
-    Solider MJPEG-Preview auf Basis libcamera-vid.
+    MJPEG-Preview auf Basis libcamera-vid.
     - robustes Frame-Parsing
     - stderr-Ringpuffer für Diagnosen
     - health_check() zeigt Prozesszustand + letzte Fehlermeldungen
-    - Still-Captures (JPEG/PNG/TIFF/BMP) + echtes RAW (DNG)
+    - Still-Captures (JPEG/PNG/TIFF/BMP) + RAW (DNG) via libcamera-still
     """
-    def __init__(self, width=640, height=480, framerate=15, shutter=None, gain=None, extra_opts=None):
+    def __init__(self, width=640, height=480, framerate=15,
+                 shutter=None, gain=None, extra_opts=None):
         self.width = width
         self.height = height
         self.framerate = framerate
@@ -36,6 +38,7 @@ class CameraStream:
         self.start()
 
     # ---------- Diagnostics ----------
+
     def last_errors(self, n=20):
         return "\n".join(list(self.stderr_lines)[-n:])
 
@@ -51,6 +54,7 @@ class CameraStream:
         }
 
     # ---------- Process control ----------
+
     def start(self):
         with self.proc_lock:
             if self.running:
@@ -76,16 +80,21 @@ class CameraStream:
                         if not txt:
                             continue
                         if "Corrupt JPEG data" in txt:
+                            # harmlose Warnung
                             continue
                         self.stderr_lines.append(txt)
                 except Exception as ex:
                     self.stderr_lines.append(f"[stderr reader error] {ex}")
 
-            self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
+            self._stderr_thread = threading.Thread(
+                target=_read_stderr, daemon=True
+            )
             self._stderr_thread.start()
 
             # stdout reader
-            self.thread = threading.Thread(target=self._read_stream, daemon=True)
+            self.thread = threading.Thread(
+                target=self._read_stream, daemon=True
+            )
             self.thread.start()
 
     def stop(self):
@@ -123,6 +132,7 @@ class CameraStream:
         self.extra_opts = dict(extra_opts or {})
 
     # ---------- Command ----------
+
     def build_command(self):
         cmd = [
             "libcamera-vid",
@@ -138,8 +148,10 @@ class CameraStream:
 
         # AE aus -> feste shutter/gain
         if not extra.get("ae", False):
-            if self.shutter: cmd += ["--shutter", str(self.shutter)]
-            if self.gain is not None: cmd += ["--gain", str(self.gain)]
+            if self.shutter:
+                cmd += ["--shutter", str(self.shutter)]
+            if self.gain is not None:
+                cmd += ["--gain", str(self.gain)]
 
         # AWB
         if extra.get("awb", False) is False:
@@ -148,12 +160,16 @@ class CameraStream:
             cmd += ["--awbgains", f"{r},{b}"]
 
         # Denoise / ISP
-        if extra.get("denoise"):       cmd += ["--denoise", extra["denoise"]]     # cdn_off|fast|hq
-        if "sharpness"  in extra:      cmd += ["--sharpness",  str(extra["sharpness"])]
-        if "contrast"   in extra:      cmd += ["--contrast",   str(extra["contrast"])]
-        if "saturation" in extra:      cmd += ["--saturation", str(extra["saturation"])]
+        if extra.get("denoise"):
+            cmd += ["--denoise", extra["denoise"]]   # cdn_off|fast|hq
+        if "sharpness" in extra:
+            cmd += ["--sharpness", str(extra["sharpness"])]
+        if "contrast" in extra:
+            cmd += ["--contrast", str(extra["contrast"])]
+        if "saturation" in extra:
+            cmd += ["--saturation", str(extra["saturation"])]
 
-        # Vorsicht: nicht jede libcamera-vid Version hat --flicker
+        # Flicker (nur da, wenn Version es kann)
         f = extra.get("flicker")
         if f and str(f).lower() in ("off", "50hz", "60hz"):
             cmd += ["--flicker", f]
@@ -161,6 +177,7 @@ class CameraStream:
         return cmd
 
     # ---------- Stream reader ----------
+
     def _read_stream(self):
         CHUNK = 65536
         MAX_BUFFER = 8 * 1024 * 1024
@@ -170,6 +187,7 @@ class CameraStream:
                 if not data:
                     break
                 self.buffer += data
+
                 # Puffer begrenzen
                 if len(self.buffer) > MAX_BUFFER:
                     last_soi = self.buffer.rfind(b'\xff\xd8')
@@ -185,7 +203,10 @@ class CameraStream:
                     self.buffer = self.buffer[end + 2:]
                     if len(jpg) < 1024:
                         continue
-                    img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
+                    img = cv2.imdecode(
+                        np.frombuffer(jpg, np.uint8),
+                        cv2.IMREAD_COLOR
+                    )
                     if img is None:
                         continue
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -200,6 +221,7 @@ class CameraStream:
         return self.frame
 
     # ---------- Still capture helpers ----------
+
     def _run_capture(self, cmd, timeout=10):
         res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         if res.returncode != 0:
@@ -222,19 +244,24 @@ class CameraStream:
             r, b = extra.get("awbgains", (2.0, 1.5))
             base_cmd += ["--awbgains", f"{r},{b}"]
         # Denoise/ISP
-        if extra.get("denoise"):       base_cmd += ["--denoise", extra["denoise"]]
-        if "sharpness"  in extra:      base_cmd += ["--sharpness",  str(extra["sharpness"])]
-        if "contrast"   in extra:      base_cmd += ["--contrast",   str(extra["contrast"])]
-        if "saturation" in extra:      base_cmd += ["--saturation", str(extra["saturation"])]
+        if extra.get("denoise"):
+            base_cmd += ["--denoise", extra["denoise"]]
+        if "sharpness" in extra:
+            base_cmd += ["--sharpness", str(extra["sharpness"])]
+        if "contrast" in extra:
+            base_cmd += ["--contrast", str(extra["contrast"])]
+        if "saturation" in extra:
+            base_cmd += ["--saturation", str(extra["saturation"])]
         # Flicker (nur wenn vorhanden)
         f = extra.get("flicker")
         if f and str(f).lower() in ("off", "50hz", "60hz"):
             base_cmd += ["--flicker", f]
         return base_cmd
 
-    def capture_still(self, filename="capture.jpg", fmt="jpg", width=None, height=None, shutter=None, gain=None):
+    def capture_still(self, filename="capture.jpg", fmt="jpg",
+                      width=None, height=None, shutter=None, gain=None):
         """
-        Speichert ein 'entwickeltes' Bild (jpg/png/tiff/bmp) über libcamera-still.
+        'Entwickeltes' Bild (jpg/png/tiff/bmp) über libcamera-still.
         Berücksichtigt extra_opts (AWB off, awbgains, denoise,...).
         """
         fmt = (fmt or "jpg").lower()
@@ -242,17 +269,18 @@ class CameraStream:
         if enc not in ("jpg", "png", "tiff", "bmp"):
             raise ValueError(f"Unsupported format: {fmt}")
 
-        # Pfad vorbereiten
         filename = os.path.expanduser(filename)
         base, ext = os.path.splitext(filename)
         if ext.lower() != f".{enc}":
             filename = base + f".{enc}"
         os.makedirs(os.path.dirname(filename) or ".", exist_ok=True)
 
-        w  = width   or self.width
-        h  = height  or self.height
-        sh = shutter if shutter is not None else (None if (self.extra_opts.get("ae", False)) else self.shutter)
-        gn = gain    if gain    is not None else (None if (self.extra_opts.get("ae", False)) else self.gain)
+        w = width or self.width
+        h = height or self.height
+        sh = shutter if shutter is not None else \
+            (None if self.extra_opts.get("ae", False) else self.shutter)
+        gn = gain if gain is not None else \
+            (None if self.extra_opts.get("ae", False) else self.gain)
 
         base_cmd = [
             "libcamera-still",
@@ -263,12 +291,13 @@ class CameraStream:
             "--height", str(h),
             "--encoding", enc,
         ]
-        if sh: base_cmd += ["--shutter", str(sh)]
-        if gn: base_cmd += ["--gain", str(gn)]
+        if sh:
+            base_cmd += ["--shutter", str(sh)]
+        if gn:
+            base_cmd += ["--gain", str(gn)]
         base_cmd = self._apply_extra_to_still(base_cmd, self.extra_opts)
         base_cmd += ["-o", filename]
 
-        # Vorschau pausieren
         was_running = self.running
         self.preview_paused = True
         if was_running:
@@ -281,18 +310,22 @@ class CameraStream:
                 self.start()
             self.preview_paused = False
 
-    def capture_raw_dng(self, filename="capture.dng", width=None, height=None, shutter=None, gain=None, both=False):
+    def capture_raw_dng(self, filename="capture.dng",
+                        width=None, height=None, shutter=None, gain=None,
+                        both=False):
         """
-        Echten Sensor-RAW (DNG) aufnehmen.
+        Sensor-RAW (DNG) aufnehmen.
         - both=False: nur DNG
         - both=True : JPEG + DNG (DNG neben JPEG-Basename)
         """
         filename = os.path.expanduser(filename)
         base, ext = os.path.splitext(filename)
-        w  = width   or self.width
-        h  = height  or self.height
-        sh = shutter if shutter is not None else (None if (self.extra_opts.get("ae", False)) else self.shutter)
-        gn = gain    if gain    is not None else (None if (self.extra_opts.get("ae", False)) else self.gain)
+        w = width or self.width
+        h = height or self.height
+        sh = shutter if shutter is not None else \
+            (None if self.extra_opts.get("ae", False) else self.shutter)
+        gn = gain if gain is not None else \
+            (None if self.extra_opts.get("ae", False) else self.gain)
 
         base_cmd = [
             "libcamera-still",
@@ -302,11 +335,12 @@ class CameraStream:
             "--width", str(w),
             "--height", str(h),
         ]
-        if sh: base_cmd += ["--shutter", str(sh)]
-        if gn: base_cmd += ["--gain", str(gn)]
+        if sh:
+            base_cmd += ["--shutter", str(sh)]
+        if gn:
+            base_cmd += ["--gain", str(gn)]
         base_cmd = self._apply_extra_to_still(base_cmd, self.extra_opts)
 
-        # Vorschau pausieren
         was_running = self.running
         self.preview_paused = True
         if was_running:
@@ -328,11 +362,10 @@ class CameraStream:
                 try:
                     self._run_capture(cmd, timeout=20)
                 except RuntimeError:
-                    # Fallback für ältere Builds: -r benötigt "Haupt"-Output → temporäres JPEG
+                    # Fallback: temporäres JPEG
                     jpg_tmp = base + ".tmp.jpg"
                     cmd_fb = base_cmd + ["-r", "-o", jpg_tmp]
                     self._run_capture(cmd_fb, timeout=20)
-                    # DNG wird parallel geschrieben, Pfad vom Basename
                     dng_path = os.path.splitext(jpg_tmp)[0] + ".dng"
                     try:
                         os.remove(jpg_tmp)
