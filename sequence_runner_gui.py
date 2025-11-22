@@ -2,10 +2,13 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
+import numpy as np
 from PIL import ImageTk
 import numpy as np
 
 import matplotlib
+matplotlib.use("TkAgg")
+import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 
@@ -20,17 +23,9 @@ class SequenceRunnerGUI(tk.Tk):
 
         # --- Dark Theme / gedeckte Grautöne ---
         self.configure(bg="#2b2b2b")
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")
-        except Exception:
-            pass
-        style.configure("TFrame", background="#2b2b2b")
-        style.configure("TLabel", background="#2b2b2b", foreground="white")
-        style.configure("TButton", padding=4)
-        style.configure("TCheckbutton", background="#2b2b2b", foreground="white")
+        self.geometry("1060x660")
 
-        # ---- Layout
+        # ---- Layout ----
         self.left = ttk.Frame(self)
         self.left.pack(side="left", fill="y", padx=8, pady=8)
 
@@ -38,61 +33,61 @@ class SequenceRunnerGUI(tk.Tk):
         self.main.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
 
         # Bildanzeige
-        self.image_label = ttk.Label(self.main, style="TLabel")
+        self.image_label = ttk.Label(self.main)
         self.image_label.pack(fill="both", expand=True)
 
-        # Histogramm mit pyplot
+        # Histogramm über pyplot
         self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
-        self.fig.patch.set_facecolor("#2b2b2b")
+        self.fig.patch.set_facecolor("#1e1e1e")
         self.ax.set_facecolor("#1e1e1e")
+        self.ax.tick_params(colors="white")
+        self.ax.spines["bottom"].set_color("white")
+        self.ax.spines["left"].set_color("white")
+        self.ax.spines["top"].set_color("#444444")
+        self.ax.spines["right"].set_color("#444444")
+
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
         self.canvas.get_tk_widget().pack(fill="x")
 
-        # ---- Controls (links)
-        ttk.Label(self.left, text="Funktionen", style="TLabel").pack(
-            pady=(0, 6), fill="x"
-        )
+        # ---- Controls (links) ----
+        ttk.Label(self.left, text="Funktionen").pack(pady=(0, 6), fill="x")
 
-        ttk.Button(self.left, text="Kameraeinstellungen",
-                   command=self.open_camera_settings).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="LED Steuerung",
-                   command=self.open_led_controller).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Sensorsignal",
-                   command=self.open_sensor_monitor).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Kameraeinstellungen", command=self.open_camera_settings)\
+            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="LED Steuerung", command=self.open_led_controller)\
+            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Sensorsignal", command=self.open_sensor_monitor)\
+            .pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Einzelaufnahme (JPEG)",
-                   command=self.capture_jpeg).pack(pady=2, fill="x")
-        ttk.Button(self.left, text="Einzelaufnahme (RAW)",
-                   command=self.capture_raw).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (JPEG)", command=self.capture_jpeg)\
+            .pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Einzelaufnahme (RAW)", command=self.capture_raw)\
+            .pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
 
-        ttk.Button(self.left, text="Auto-LED starten",
-                   command=self.start_auto_led).pack(pady=2, fill="x")
+        ttk.Button(self.left, text="Auto-LED starten", command=self.start_auto_led)\
+            .pack(pady=2, fill="x")
 
         self.hist_log = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             self.left,
             text="Histogramm: log",
             variable=self.hist_log,
-            command=self.update_gui_once
+            command=self.update_gui_once,
         ).pack(pady=6, fill="x")
 
         self.live_enabled = tk.BooleanVar(value=False)
         self._live_job = None
-        self.btn_live = ttk.Button(self.left, text="Live: AN",
-                                   command=self.toggle_live)
+        self.btn_live = ttk.Button(self.left, text="Live: AN", command=self.toggle_live)
         self.btn_live.pack(pady=2, fill="x")
 
         ttk.Separator(self.left).pack(pady=6, fill="x")
+        ttk.Button(self.left, text="Beenden", command=self.on_close).pack(pady=2, fill="x")
 
-        ttk.Button(self.left, text="Beenden", command=self.on_close).pack(
-            pady=2, fill="x"
-        )
-
-        # ---- Stream starten
+        # ---- Kamera-Stream ----
         self.stream = CameraStream(width=640, height=480, framerate=15)
         self.start_live()
 
@@ -164,7 +159,7 @@ class SequenceRunnerGUI(tk.Tk):
             filetypes=[
                 ("JPEG", "*.jpg;*.jpeg"),
                 ("PNG", "*.png"),
-                ("TIFF", "*.tiff;*.tif"),
+                ("TIFF", "*.tiff"),
                 ("BMP", "*.bmp"),
             ],
         )
@@ -317,30 +312,29 @@ class SequenceRunnerGUI(tk.Tk):
             hist_b = np.where(hist_b == 0, 1, hist_b)
             hist_y = np.where(hist_y == 0, 1, hist_y)
             self.ax.set_yscale("log")
-            self.ax.set_title("Histogramm (log)", color="white")
+            self.ax.set_title("Histogramm (log)", color="#dddddd")
         else:
             self.ax.set_yscale("linear")
-            self.ax.set_title("Histogramm (linear)", color="white")
+            self.ax.set_title("Histogramm (linear)", color="#dddddd")
 
-        self.ax.plot(hist_r, label="R", color="red",  alpha=0.7)
-        self.ax.plot(hist_g, label="G", color="lime", alpha=0.7)
-        self.ax.plot(hist_b, label="B", color="cyan", alpha=0.7)
-        self.ax.plot(hist_y, label="Gray", color="white",
-                     alpha=0.8, linewidth=1.1)
+        # gedeckte Farben
+        self.ax.plot(hist_r, label="R", color="#e57373", alpha=0.8)
+        self.ax.plot(hist_g, label="G", color="#81c784", alpha=0.8)
+        self.ax.plot(hist_b, label="B", color="#64b5f6", alpha=0.8)
+        self.ax.plot(hist_y, label="Gray", color="#eeeeee", alpha=0.9, linewidth=1.2)
 
         self.ax.set_xlim(0, 256)
-        self.ax.tick_params(colors="white")
+        self.ax.tick_params(colors="#dddddd")
         for spine in self.ax.spines.values():
-            spine.set_color("#aaaaaa")
-
+            spine.set_color("#888888")
         leg = self.ax.legend(
             facecolor="#2e2e2e",
-            edgecolor="#2e2e2e",
-            labelcolor="white",
-            loc="upper right"
+            edgecolor="#444444",
+            labelcolor="#dddddd",
+            loc="upper right",
         )
         for text in leg.get_texts():
-            text.set_color("white")
+            text.set_color("#dddddd")
 
         self.canvas.draw_idle()
 
