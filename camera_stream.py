@@ -4,7 +4,7 @@ import subprocess
 import threading
 import time
 from collections import deque
-
+import re
 import numpy as np
 import cv2
 from PIL import Image
@@ -38,6 +38,8 @@ class CameraStream:
         self.running = False
         self.preview_paused = False
         self.stderr_lines = deque(maxlen=200)
+        self._supported_vid_opts = self._probe_supported_options("libcamera-vid")
+        self._supported_still_opts = self._probe_supported_options("libcamera-still")
 
         self.start()
 
@@ -56,6 +58,15 @@ class CameraStream:
             "cmd": " ".join(self.build_command()),
             "stderr_tail": self.last_errors(12),
         }
+
+    def _probe_supported_options(self, toolname: str):
+        try:
+            res = subprocess.run([toolname, "--help"], capture_output=True, text=True, timeout=2)
+            txt = (res.stdout or "") + "\n" + (res.stderr or "")
+            return set(re.findall(r"--[a-zA-Z0-9_-]+", txt))
+        except Exception:
+            return set()
+
 
     # ---------- Process control ----------
 
@@ -193,8 +204,8 @@ class CameraStream:
 
         # Flicker (nur wenn Build das kennt)
         f = extra.get("flicker")
-        if f and str(f).lower() in ("off", "50hz", "60hz"):
-            cmd += ["--flicker", f]
+        if f and "--flicker" in getattr(self, "_supported_vid_opts", set()):
+            cmd += ["--flicker", str(f)]
 
         return cmd
 
@@ -280,8 +291,9 @@ class CameraStream:
             base_cmd += ["--saturation", str(extra["saturation"])]
         # Flicker
         f = extra.get("flicker")
-        if f and str(f).lower() in ("off", "50hz", "60hz"):
-            base_cmd += ["--flicker", f]
+        if f and "--flicker" in getattr(self, "_supported_still_opts", set()):
+            base_cmd += ["--flicker", str(f)]
+
         return base_cmd
 
     def capture_still(self, filename="capture.jpg", fmt="jpg",
