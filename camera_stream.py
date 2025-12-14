@@ -126,12 +126,22 @@ class CameraStream:
 
     def reconfigure(self, **kwargs):
         self.stop()
-        self.width = kwargs.get("width", self.width)
-        self.height = kwargs.get("height", self.height)
-        self.framerate = kwargs.get("framerate", self.framerate)
-        self.shutter = kwargs.get("shutter", self.shutter)
-        self.gain = kwargs.get("gain", self.gain)
-        self.extra_opts = dict(kwargs.get("extra_opts", self.extra_opts))
+
+        # robust: libcamera mag hier i.d.R. ints (framerate/shutter/width/height)
+        if "width" in kwargs and kwargs["width"] is not None:
+            self.width = int(kwargs["width"])
+        if "height" in kwargs and kwargs["height"] is not None:
+            self.height = int(kwargs["height"])
+        if "framerate" in kwargs and kwargs["framerate"] is not None:
+            self.framerate = int(round(float(kwargs["framerate"])))
+        if "shutter" in kwargs:
+            self.shutter = None if kwargs["shutter"] is None else int(kwargs["shutter"])
+        if "gain" in kwargs:
+            self.gain = None if kwargs["gain"] is None else float(kwargs["gain"])
+
+        if "extra_opts" in kwargs and kwargs["extra_opts"] is not None:
+            self.extra_opts = dict(kwargs["extra_opts"])
+
         self.buffer = b""
         self.frame = None
         self.start()
@@ -148,7 +158,7 @@ class CameraStream:
             "-t", "0",
             "--width", str(self.width),
             "--height", str(self.height),
-            "--framerate", str(self.framerate),
+            "--framerate", str(int(self.framerate)),
             "--codec", "mjpeg",
             "--quality", "85",
             "--flush", "1",          # <<< wichtig für Live!
