@@ -12,11 +12,11 @@ from PIL import Image
 
 class CameraStream:
     """
-    Solider MJPEG-Preview auf Basis libcamera-vid.
-    - robustes Frame-Parsing (mehrere JPEGs pro Chunk)
-    - stderr-Ringpuffer für Diagnosen
-    - health_check() gibt Status + letzte Fehlermeldungen zurück
-    - preview_paused wird beim Capture IMMER zurückgesetzt
+    MJPEG-Preview auf Basis libcamera-vid (stdout -> JPEG Frames).
+    Fixes:
+      - --flush 1 erzwingt frameweises Flushen (sonst kann stdout lange leer wirken)
+      - Popen(bufsize=0) -> keine Python-seitige Pufferung
+      - health_check() für Debug
     """
 
     def __init__(self, width=640, height=480, framerate=15,
@@ -65,12 +65,14 @@ class CameraStream:
                 return
             self.running = True
             cmd = self.build_command()
+
             try:
+                # bufsize=0 => unbuffered pipes (hilft bei Live-Streams)
                 self.proc = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,   # für Debug
-                    bufsize=10 ** 8
+                    stderr=subprocess.PIPE,
+                    bufsize=0
                 )
             except FileNotFoundError as e:
                 self.running = False
@@ -83,21 +85,25 @@ class CameraStream:
                         txt = line.decode(errors="replace").rstrip()
                         if not txt:
                             continue
+                        # "Corrupt JPEG data" ist oft harmlos, aber wir loggen es nicht zu
                         if "Corrupt JPEG data" in txt:
-                            # harmlose Warnung
                             continue
                         self.stderr_lines.append(txt)
                 except Exception as ex:
                     self.stderr_lines.append(f"[stderr reader error] {ex}")
 
-            self._stderr_thread = threading.Thread(
-                target=_read_stderr, daemon=True
-            )
+            self._stderr_thread = threading.Thread(target=_read_stderr, daemon=True)
             self._stderr_thread.start()
 
             # stdout reader
             self.thread = threading.Thread(target=self._read_stream, daemon=True)
             self.thread.start()
+
+            # Kurz prüfen, ob der Prozess sofort stirbt
+            time.sleep(0.1)
+            if self.proc.poll() is not None:
+                self.stderr_lines.append("[CameraStream] libcamera-vid exited immediately")
+                self.running = False
 
     def stop(self):
         with self.proc_lock:
@@ -138,14 +144,17 @@ class CameraStream:
     def build_command(self):
         cmd = [
             "libcamera-vid",
-            "--nopreview", "-t", "0",
+            "--nopreview",
+            "-t", "0",
             "--width", str(self.width),
             "--height", str(self.height),
             "--framerate", str(self.framerate),
             "--codec", "mjpeg",
-            "--inline",
+            "--quality", "85",
+            "--flush", "1",          # <<< wichtig für Live!
             "-o", "-"
         ]
+
         extra = self.extra_opts or {}
 
         # AE aus -> feste shutter/gain
@@ -163,7 +172,7 @@ class CameraStream:
 
         # Denoise / ISP
         if extra.get("denoise"):
-            cmd += ["--denoise", extra["denoise"]]     # cdn_off|fast|hq
+            cmd += ["--denoise", extra["denoise"]]  # cdn_off|fast|hq
         if "sharpness" in extra:
             cmd += ["--sharpness", str(extra["sharpness"])]
         if "contrast" in extra:
@@ -183,6 +192,7 @@ class CameraStream:
     def _read_stream(self):
         CHUNK = 65536
         MAX_BUFFER = 8 * 1024 * 1024
+
         while self.running and self.proc and self.proc.stdout:
             try:
                 data = self.proc.stdout.read(CHUNK)
@@ -192,29 +202,35 @@ class CameraStream:
 
                 # Puffer begrenzen
                 if len(self.buffer) > MAX_BUFFER:
-                    last_soi = self.buffer.rfind(b'\xff\xd8')
+                    last_soi = self.buffer.rfind(b"\xff\xd8")
                     self.buffer = self.buffer[last_soi:] if last_soi != -1 else b""
 
                 # komplette JPEGs dekodieren
                 while True:
-                    start = self.buffer.find(b'\xff\xd8')
-                    end = self.buffer.find(b'\xff\xd9', start + 2)
-                    if start == -1 or end == -1:
+                    start = self.buffer.find(b"\xff\xd8")
+                    if start == -1:
                         break
+                    end = self.buffer.find(b"\xff\xd9", start + 2)
+                    if end == -1:
+                        break
+
                     jpg = self.buffer[start:end + 2]
                     self.buffer = self.buffer[end + 2:]
+
                     if len(jpg) < 1024:
                         continue
+
                     img = cv2.imdecode(np.frombuffer(jpg, np.uint8), cv2.IMREAD_COLOR)
                     if img is None:
                         continue
                     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
                     if not self.preview_paused:
                         self.frame = Image.fromarray(img)
+
             except Exception as e:
                 self.stderr_lines.append(f"[CameraStream error] {e}")
                 time.sleep(0.05)
-                continue
 
     def get_frame(self):
         return self.frame
@@ -242,7 +258,7 @@ class CameraStream:
             base_cmd += ["--awb", "off"]
             r, b = extra.get("awbgains", (2.0, 1.5))
             base_cmd += ["--awbgains", f"{r},{b}"]
-        # Denoise/ISP
+
         if extra.get("denoise"):
             base_cmd += ["--denoise", extra["denoise"]]
         if "sharpness" in extra:
