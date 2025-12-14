@@ -166,7 +166,8 @@ class CameraStream:
 
         # AWB
         if extra.get("awb", False) is False:
-            cmd += ["--awb", "off"]
+            # libcamera: "off" ist ungültig -> für festen Weißabgleich "custom"
+            cmd += ["--awb", "custom"]
             r, b = extra.get("awbgains", (2.0, 1.5))
             cmd += ["--awbgains", f"{r},{b}"]
 
@@ -255,7 +256,7 @@ class CameraStream:
     def _apply_extra_to_still(self, base_cmd: list, extra: dict):
         # AWB/awbgains
         if extra.get("awb", False) is False:
-            base_cmd += ["--awb", "off"]
+            base_cmd += ["--awb", "custom"]
             r, b = extra.get("awbgains", (2.0, 1.5))
             base_cmd += ["--awbgains", f"{r},{b}"]
 
