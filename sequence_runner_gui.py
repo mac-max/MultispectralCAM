@@ -63,6 +63,9 @@ class SequenceRunnerGUI(tk.Tk):
         ttk.Button(self.left, text="Auto-LED starten",
                    command=self.start_auto_led).pack(pady=2, fill="x")
 
+        ttk.Button(self.left, text="Aufnahmesequenz",
+                   command=self.open_sequence_dialog).pack(pady=2, fill="x")
+
         self.hist_log = tk.BooleanVar(value=True)
         ttk.Checkbutton(
             self.left,
@@ -216,6 +219,13 @@ class SequenceRunnerGUI(tk.Tk):
         messagebox.showinfo(
             "Auto-LED", f"Headless-Regelung gestartet für: {channels[0]}"
         )
+
+    def open_sequence_dialog(self):
+        try:
+            from sequence_dialog import SequenceDialog
+            SequenceDialog(self)
+        except Exception as e:
+            messagebox.showerror("Aufnahmesequenz", f"Konnte Sequenzfenster nicht öffnen:\n{e}")
 
     # ---------- Live handling ----------
 

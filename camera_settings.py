@@ -404,8 +404,7 @@ class CameraSettings(tk.Toplevel):
                 "Einstellungen sind nun für Vorschau aktiv.\n"
                 "Stelle sicher, dass deine capture_*-Funktionen extra_opts berücksichtigen."
             )
-        print(self.camera_stream.health_check())
-
+       
         self.destroy()
 
     # ---------------- IR-Filter ----------------
