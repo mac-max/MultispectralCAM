@@ -26,8 +26,11 @@ class ChannelPlan:
     mode: str = "fixed"     # "fixed" oder "auto"
     pwm: float = 10.0       # nur für fixed
 
+    hist_channel: str = "Gray"   # <<< NEU: pro Kanal
+
     jpeg: bool = True
     raw: bool = False
+
 
 
 @dataclass
@@ -63,6 +66,36 @@ class SequenceDialog(tk.Toplevel):
 
     def __init__(self, master):
         super().__init__(master)
+
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")  # besser “themed” anpassbar
+        except Exception:
+            pass
+
+        # Grundfarben
+        BG = "#2e2e2e"
+        FG = "#dddddd"
+        FIELD = "#3a3a3a"
+        BORDER = "#444444"
+
+        self.configure(bg=BG)
+
+        style.configure(".", background=BG, foreground=FG)
+        style.configure("TFrame", background=BG)
+        style.configure("TLabel", background=BG, foreground=FG)
+        style.configure("TLabelframe", background=BG, foreground=FG, bordercolor=BORDER)
+        style.configure("TLabelframe.Label", background=BG, foreground=FG)
+        style.configure("TButton", background=FIELD, foreground=FG)
+        style.map("TButton", background=[("active", "#444444")])
+
+        style.configure("TCheckbutton", background=BG, foreground=FG)
+        style.map("TCheckbutton", background=[("active", BG)], foreground=[("active", FG)])
+
+        style.configure("TEntry", fieldbackground=FIELD, foreground=FG, insertcolor=FG)
+        style.configure("TCombobox", fieldbackground=FIELD, background=FIELD, foreground=FG)
+        style.configure("TMenubutton", background=FIELD, foreground=FG)
+
         self.master = master
         self.title("Aufnahmesequenz")
         self.geometry("780x520")
@@ -181,8 +214,8 @@ class SequenceDialog(tk.Toplevel):
         hdr = ttk.Frame(self.rows_frame)
         hdr.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 2))
 
-        headings = ["Use", "Kanal", "Mode", "PWM %", "JPEG", "RAW"]
-        widths = [6, 22, 10, 8, 6, 6]
+        headings = ["Use", "Kanal", "Mode", "PWM %", "Hist", "JPEG", "RAW"]
+        widths = [6, 8, 10, 8, 7, 6, 6]
         for i, (h, w) in enumerate(zip(headings, widths)):
             ttk.Label(hdr, text=h).grid(row=0, column=i, sticky="w", padx=(0, 10))
             hdr.columnconfigure(i, minsize=w*8)
@@ -241,11 +274,13 @@ class SequenceDialog(tk.Toplevel):
             pwm = tk.DoubleVar(value=10.0)
             jpeg = tk.BooleanVar(value=True)
             raw = tk.BooleanVar(value=False)
+            hist_ch = tk.StringVar(value="Gray")
 
             ttk.Checkbutton(frm, variable=enabled).grid(row=0, column=0, sticky="w", padx=(0, 10))
             ttk.Label(frm, text=ch_name).grid(row=0, column=1, sticky="w", padx=(0, 10))
             ttk.OptionMenu(frm, mode, mode.get(), "fixed", "auto").grid(row=0, column=2, sticky="w", padx=(0, 10))
             ttk.Entry(frm, textvariable=pwm, width=8).grid(row=0, column=3, sticky="w", padx=(0, 14))
+            ttk.OptionMenu(frm, hist_ch, hist_ch.get(), "Gray", "R", "G", "B").grid(row=0, column=4, sticky="w", padx=(0, 14))
             ttk.Checkbutton(frm, variable=jpeg).grid(row=0, column=4, sticky="w", padx=(0, 18))
             ttk.Checkbutton(frm, variable=raw).grid(row=0, column=5, sticky="w")
 
@@ -255,6 +290,7 @@ class SequenceDialog(tk.Toplevel):
                 "enabled": enabled,
                 "mode": mode,
                 "pwm": pwm,
+                "hist_channel": hist_ch,
                 "jpeg": jpeg,
                 "raw": raw,
             })
@@ -284,6 +320,7 @@ class SequenceDialog(tk.Toplevel):
                 enabled=bool(row["enabled"].get()),
                 mode=row["mode"].get(),
                 pwm=float(row["pwm"].get()),
+                hist_channel=row["hist_channel"].get(),
                 jpeg=bool(row["jpeg"].get()),
                 raw=bool(row["raw"].get()),
             )
@@ -314,6 +351,7 @@ class SequenceDialog(tk.Toplevel):
                     r["enabled"].set(bool(cp.enabled))
                     r["mode"].set(cp.mode)
                     r["pwm"].set(float(cp.pwm))
+                    r["hist_channel"].set(cp.hist_channel or "Gray")
                     r["jpeg"].set(bool(cp.jpeg))
                     r["raw"].set(bool(cp.raw))
 
@@ -429,7 +467,8 @@ class SequenceDialog(tk.Toplevel):
                         self.led.set_channel_by_name(ch_plan.name, pwm)
                         final_pwm = pwm
                     else:
-                        final_pwm = self._auto_led_to_target(plan, ch_plan.name)
+                        final_pwm = self._auto_led_to_target(plan, ch_plan.name, ch_plan.hist_channel)
+
 
                     # kurze Settling-Zeit
                     time.sleep(0.15)
@@ -524,7 +563,7 @@ class SequenceDialog(tk.Toplevel):
             chan = np.mean(frame_np, axis=2)
         return chan.astype(np.uint8, copy=False).ravel()
 
-    def _auto_led_to_target(self, plan: SequencePlan, channel_name: str) -> float:
+    def _auto_led_to_target(self, plan: SequencePlan, channel_name: str, hist_channel: str) -> float:
         """
         Headless Auto-LED: regelt nur diesen Kanal, bis innerhalb Toleranz.
         """
@@ -548,7 +587,7 @@ class SequenceDialog(tk.Toplevel):
                 continue
 
             f = np.array(frame)
-            chan = self._get_hist_channel_flat(f, plan.hist_channel)
+            chan = self._get_hist_channel_flat(f, hist_channel)
             hist, _ = np.histogram(chan, bins=256, range=(0, 256))
             total = max(1, chan.size)
 
