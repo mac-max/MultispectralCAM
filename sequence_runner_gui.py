@@ -27,7 +27,9 @@ class SequenceRunnerGUI(tk.Tk):
         FG = "#dddddd"
         FIELD = "#3a3a3a"
         BORDER = "#444444"
-
+        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
+        self.preview_w = 900
+        self.preview_h = 480
         self.configure(bg=BG)
 
         style.configure(".", background=BG, foreground=FG)
@@ -48,11 +50,6 @@ class SequenceRunnerGUI(tk.Tk):
         self.title("Multispektral – Vorschau")
         self.configure(bg="#2b2b2b")
         self.geometry("1060x660")
-        
-        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
-        self.preview_w = 900
-        self.preview_h = 480
-
 
         # ---- Layout ----
         self.left = ttk.Frame(self)
