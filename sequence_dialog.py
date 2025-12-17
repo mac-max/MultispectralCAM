@@ -233,7 +233,8 @@ class SequenceDialog(tk.Toplevel):
         try:
             channels = self.led.get_all_channels()
         except Exception as e:
-            messagebox.showerror("Sequenz", f"Konnte LED-Kanäle nicht lesen:\n{e}")
+            msg = str(e)
+            messagebox.showerror("Sequenz", f"Konnte LED-Kanäle nicht lesen:\n{msg}")
             channels = []
 
         for idx, ch_name in enumerate(channels, start=1):
@@ -342,7 +343,8 @@ class SequenceDialog(tk.Toplevel):
                 json.dump(data, f, indent=2)
             self.status_var.set(f"Status: gespeichert: {path}")
         except Exception as e:
-            messagebox.showerror("Speichern", f"Konnte nicht speichern:\n{e}")
+            msg = str(e)
+            messagebox.showerror("Speichern", f"Konnte nicht speichern:\n{msg}")
 
     def load_plan(self):
         path = filedialog.askopenfilename(
@@ -363,7 +365,8 @@ class SequenceDialog(tk.Toplevel):
             self._apply_plan(plan)
             self.status_var.set(f"Status: geladen: {path}")
         except Exception as e:
-            messagebox.showerror("Laden", f"Konnte nicht laden:\n{e}")
+            msg = str(e)
+            messagebox.showerror("Laden", f"Konnte nicht laden:\n{msg}")
 
     # ---------------- Run Sequence ----------------
 
@@ -478,12 +481,14 @@ class SequenceDialog(tk.Toplevel):
                         dng_path = os.path.join(ch_dir, "capture.dng")
                         self.stream.capture_raw_dng(dng_path, both=False)
 
-            self._ui(lambda: self.status_var.set(f"Status: fertig ✅  ({base_dir})"))
+            self._ui(lambda: self.status_var.set(f"Status: fertig  ({base_dir})"))
             self._ui(lambda: self.progress_var.set(""))
 
         except Exception as e:
-            self._ui(lambda: self.status_var.set("Status: Fehler ❌"))
-            self._ui(lambda: self.progress_var.set(str(e)))
+            self._ui(lambda: self.status_var.set("Status: Fehler"))
+            msg = str(e)
+            self._ui(lambda m=msg: self.progress_var.set(m))
+
         finally:
             # LEDs aus
             try:
