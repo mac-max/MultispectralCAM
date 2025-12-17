@@ -71,6 +71,7 @@ class SequenceDialog(tk.Toplevel):
         self.title("Aufnahmesequenz")
         self.geometry("780x520")
         self.configure(bg="#2e2e2e")
+        self._abort = False
 
         # LED Controller (headless bevorzugt)
         self.led = self.master.get_led_controller(force_gui=False)
@@ -417,6 +418,8 @@ class SequenceDialog(tk.Toplevel):
             done = 0
 
             for ir_state in plan.ir_states:
+                if self._abort:
+                    break
                 # IR state setzen
                 self._ui(lambda: self.progress_var.set(f"IR State: {ir_state}"))
                 self._set_ir_state(ir_state)
@@ -425,6 +428,8 @@ class SequenceDialog(tk.Toplevel):
                 os.makedirs(state_dir, exist_ok=True)
 
                 for ch_plan in plan.channels:
+                    if self._abort:
+                        break
                     if not ch_plan.enabled:
                         continue
 
@@ -499,6 +504,7 @@ class SequenceDialog(tk.Toplevel):
 
     def _finish_run(self):
         self._running = False
+        self._abort = False
         self.start_btn.config(state="normal")
 
     def _ui(self, fn):

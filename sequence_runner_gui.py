@@ -75,6 +75,7 @@ class SequenceRunnerGUI(tk.Tk):
         self.preview_w = 900
         self.preview_h = 480
 
+
         # ---- Controls (links) ----
         ttk.Label(self.left, text="Funktionen").pack(pady=(0, 6), fill="x")
 
@@ -390,18 +391,37 @@ class SequenceRunnerGUI(tk.Tk):
     # ---------- Beenden ----------
 
     def on_close(self):
-        if getattr(self, "_live_job", None):
-            try:
-                self.after_cancel(self._live_job)
-            except Exception:
-                pass
-            self._live_job = None
-        if hasattr(self.stream, "preview_paused"):
-            self.stream.preview_paused = False
+        # 1) laufende Sequenzen abbrechen
         try:
-            self.stream.stop()
-        finally:
+            if hasattr(self, "_running_sequence"):
+                self._running_sequence = False
+        except Exception:
+            pass
+
+        # 2) CameraStream sauber beenden
+        try:
+            if hasattr(self, "stream") and self.stream:
+                self.stream.stop()
+        except Exception as e:
+            print("[Shutdown] stream.stop() failed:", e)
+
+        # 3) LED Controller ggf. beenden
+        try:
+            led = getattr(self, "led_window", None)
+            if led and hasattr(led, "shutdown"):
+                led.shutdown()
+        except Exception:
+            pass
+
+        # 4) Tk sauber schließen
+        try:
             self.destroy()
+        except Exception:
+            pass
+
+        # 5) Prozess wirklich verlassen
+        import sys
+        sys.exit(0)
 
 
 if __name__ == "__main__":
