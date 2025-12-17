@@ -27,9 +27,6 @@ class SequenceRunnerGUI(tk.Tk):
         FG = "#dddddd"
         FIELD = "#3a3a3a"
         BORDER = "#444444"
-        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
-        self.preview_w = 900
-        self.preview_h = 480
         self.configure(bg=BG)
 
         style.configure(".", background=BG, foreground=FG)
@@ -59,10 +56,16 @@ class SequenceRunnerGUI(tk.Tk):
         self.main.pack(side="left", fill="both", expand=True, padx=(0, 8), pady=8)
 
         # Bildanzeige
-        self.image_label = ttk.Label(self.main)
-        self.image_label.pack(fill="both", expand=True)
-        self.image_label.configure(width=self.preview_w, height=self.preview_h)
-        self.image_label.pack_propagate(False)  # verhindert, dass das Label seine Größe ans Bild anpasst
+        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
+        self.preview_w = 900
+        self.preview_h = 480
+        
+        self.preview_frame = ttk.Frame(self.main, width=self.preview_w, height=self.preview_h)
+        self.preview_frame.pack(fill="none", expand=False)
+        self.preview_frame.pack_propagate(False)
+
+        self.image_label = ttk.Label(self.preview_frame)
+        self.image_label.place(relx=0.5, rely=0.5, anchor="center")
 
         # Histogramm (pyplot)
         self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
