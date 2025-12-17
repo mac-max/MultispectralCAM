@@ -48,6 +48,11 @@ class SequenceRunnerGUI(tk.Tk):
         self.title("Multispektral – Vorschau")
         self.configure(bg="#2b2b2b")
         self.geometry("1060x660")
+        
+        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
+        self.preview_w = 900
+        self.preview_h = 480
+
 
         # ---- Layout ----
         self.left = ttk.Frame(self)
@@ -70,10 +75,6 @@ class SequenceRunnerGUI(tk.Tk):
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
         self.canvas.get_tk_widget().pack(fill="x")
-
-        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
-        self.preview_w = 900
-        self.preview_h = 480
 
 
         # ---- Controls (links) ----
