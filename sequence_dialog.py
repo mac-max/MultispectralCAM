@@ -67,35 +67,6 @@ class SequenceDialog(tk.Toplevel):
     def __init__(self, master):
         super().__init__(master)
 
-        style = ttk.Style(self)
-        try:
-            style.theme_use("clam")  # besser “themed” anpassbar
-        except Exception:
-            pass
-
-        # Grundfarben
-        BG = "#2e2e2e"
-        FG = "#dddddd"
-        FIELD = "#3a3a3a"
-        BORDER = "#444444"
-
-        self.configure(bg=BG)
-
-        style.configure(".", background=BG, foreground=FG)
-        style.configure("TFrame", background=BG)
-        style.configure("TLabel", background=BG, foreground=FG)
-        style.configure("TLabelframe", background=BG, foreground=FG, bordercolor=BORDER)
-        style.configure("TLabelframe.Label", background=BG, foreground=FG)
-        style.configure("TButton", background=FIELD, foreground=FG)
-        style.map("TButton", background=[("active", "#444444")])
-
-        style.configure("TCheckbutton", background=BG, foreground=FG)
-        style.map("TCheckbutton", background=[("active", BG)], foreground=[("active", FG)])
-
-        style.configure("TEntry", fieldbackground=FIELD, foreground=FG, insertcolor=FG)
-        style.configure("TCombobox", fieldbackground=FIELD, background=FIELD, foreground=FG)
-        style.configure("TMenubutton", background=FIELD, foreground=FG)
-
         self.master = master
         self.title("Aufnahmesequenz")
         self.geometry("780x520")

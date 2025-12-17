@@ -15,6 +15,36 @@ from camera_stream import CameraStream
 class SequenceRunnerGUI(tk.Tk):
     def __init__(self):
         super().__init__()
+
+        style = ttk.Style(self)
+        try:
+            style.theme_use("clam")  # besser “themed” anpassbar
+        except Exception:
+            pass
+
+        # Grundfarben
+        BG = "#2e2e2e"
+        FG = "#dddddd"
+        FIELD = "#3a3a3a"
+        BORDER = "#444444"
+
+        self.configure(bg=BG)
+
+        style.configure(".", background=BG, foreground=FG)
+        style.configure("TFrame", background=BG)
+        style.configure("TLabel", background=BG, foreground=FG)
+        style.configure("TLabelframe", background=BG, foreground=FG, bordercolor=BORDER)
+        style.configure("TLabelframe.Label", background=BG, foreground=FG)
+        style.configure("TButton", background=FIELD, foreground=FG)
+        style.map("TButton", background=[("active", "#444444")])
+
+        style.configure("TCheckbutton", background=BG, foreground=FG)
+        style.map("TCheckbutton", background=[("active", BG)], foreground=[("active", FG)])
+
+        style.configure("TEntry", fieldbackground=FIELD, foreground=FG, insertcolor=FG)
+        style.configure("TCombobox", fieldbackground=FIELD, background=FIELD, foreground=FG)
+        style.configure("TMenubutton", background=FIELD, foreground=FG)
+
         self.title("Multispektral – Vorschau")
         self.configure(bg="#2b2b2b")
         self.geometry("1060x660")
@@ -29,17 +59,21 @@ class SequenceRunnerGUI(tk.Tk):
         # Bildanzeige
         self.image_label = ttk.Label(self.main)
         self.image_label.pack(fill="both", expand=True)
+        self.image_label.configure(width=self.preview_w, height=self.preview_h)
+        self.image_label.pack_propagate(False)  # verhindert, dass das Label seine Größe ans Bild anpasst
 
         # Histogramm (pyplot)
         self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
-        self.fig.patch.set_facecolor("#1e1e1e")
-        self.ax.set_facecolor("#1e1e1e")
         self.ax.tick_params(colors="white")
         for spine in self.ax.spines.values():
             spine.set_color("#888888")
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
         self.canvas.get_tk_widget().pack(fill="x")
+
+        # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
+        self.preview_w = 900
+        self.preview_h = 480
 
         # ---- Controls (links) ----
         ttk.Label(self.left, text="Funktionen").pack(pady=(0, 6), fill="x")
@@ -263,8 +297,21 @@ class SequenceRunnerGUI(tk.Tk):
         frame = self.stream.get_frame()
         if frame:
             imgtk = ImageTk.PhotoImage(image=frame)
+            # Bild auf feste Vorschaugröße skalieren (ohne Layout-Änderung)
+            img = frame.copy()
+            img.thumbnail((self.preview_w, self.preview_h))  # Seitenverhältnis bleibt
+
+            # Optional: Letterbox in feste Fläche (damit Label nicht "shrinken" kann)
+            from PIL import Image
+            canvas = Image.new("RGB", (self.preview_w, self.preview_h), (30, 30, 30))  # dunkles Grau
+            x = (self.preview_w - img.width) // 2
+            y = (self.preview_h - img.height) // 2
+            canvas.paste(img, (x, y))
+
+            imgtk = ImageTk.PhotoImage(image=canvas)
             self.image_label.imgtk = imgtk
             self.image_label.configure(image=imgtk)
+
             try:
                 self._render_histogram(np.array(frame))
             except Exception:
@@ -277,8 +324,21 @@ class SequenceRunnerGUI(tk.Tk):
         if not frame:
             return
         imgtk = ImageTk.PhotoImage(image=frame)
+        # Bild auf feste Vorschaugröße skalieren (ohne Layout-Änderung)
+        img = frame.copy()
+        img.thumbnail((self.preview_w, self.preview_h))  # Seitenverhältnis bleibt
+
+        # Optional: Letterbox in feste Fläche (damit Label nicht "shrinken" kann)
+        from PIL import Image
+        canvas = Image.new("RGB", (self.preview_w, self.preview_h), (30, 30, 30))  # dunkles Grau
+        x = (self.preview_w - img.width) // 2
+        y = (self.preview_h - img.height) // 2
+        canvas.paste(img, (x, y))
+
+        imgtk = ImageTk.PhotoImage(image=canvas)
         self.image_label.imgtk = imgtk
         self.image_label.configure(image=imgtk)
+
         self._render_histogram(np.array(frame))
 
     def _render_histogram(self, frame_np: np.ndarray):
