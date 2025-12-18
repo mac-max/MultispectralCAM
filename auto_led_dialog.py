@@ -55,6 +55,11 @@ class AutoLEDDialog(tk.Toplevel):
 
         self._build_ui()
         self._update_channel_list()
+        
+        self.update_idletasks()  # Layout berechnen lassen
+        w = max(self.winfo_reqwidth(), 320)
+        h = max(self.winfo_reqheight(), 550)  # Mindesthöhe
+        self.geometry(f"{w}x{h}")
 
     # ---------------- UI ----------------
 
