@@ -45,7 +45,7 @@ class SequenceRunnerGUI(tk.Tk):
         style.configure("TMenubutton", background=FIELD, foreground=FG)
 
         self.title("Multispektral – Vorschau")
-        self.configure(bg="#2b2b2b")
+        self.configure(bg=BG)
         self.geometry("1060x660")
 
         # ---- Layout ----
@@ -59,7 +59,7 @@ class SequenceRunnerGUI(tk.Tk):
         # feste Viewport-Größe für die Vorschau (Layout bleibt stabil)
         self.preview_w = 900
         self.preview_h = 480
-        
+
         self.preview_frame = ttk.Frame(self.main, width=self.preview_w, height=self.preview_h)
         self.preview_frame.pack(fill="none", expand=False)
         self.preview_frame.pack_propagate(False)
@@ -68,14 +68,20 @@ class SequenceRunnerGUI(tk.Tk):
         self.image_label.place(relx=0.5, rely=0.5, anchor="center")
 
         # Histogramm (pyplot)
+        self.hist_bg = BG  # oder "#2e2e2e" passend zu deinem UI
+
         self.fig, self.ax = plt.subplots(figsize=(5.5, 2.4), dpi=100)
-        self.ax.tick_params(colors="white")
+        self.fig.patch.set_facecolor(self.hist_bg)
+        self.ax.set_facecolor(self.hist_bg)
+
+        self.ax.tick_params(colors="#dddddd")
         for spine in self.ax.spines.values():
             spine.set_color("#888888")
 
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.main)
-        self.canvas.get_tk_widget().pack(fill="x")
-
+        w = self.canvas.get_tk_widget()
+        w.configure(bg=self.hist_bg, highlightthickness=0)
+        w.pack(fill="x")
 
         # ---- Controls (links) ----
         ttk.Label(self.left, text="Funktionen").pack(pady=(0, 6), fill="x")
